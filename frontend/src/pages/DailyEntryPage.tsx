@@ -11,9 +11,10 @@ const SYNC_LABEL: Record<string, string> = {
 interface DailyEntryPageProps {
   date: string
   onDateChange: (date: string) => void
+  onSync?: () => void
 }
 
-export function DailyEntryPage({ date, onDateChange }: DailyEntryPageProps) {
+export function DailyEntryPage({ date, onDateChange, onSync }: DailyEntryPageProps) {
   const { record, loading, save } = useDailyRecord(date)
 
   const [cashIncome, setCashIncome] = useState(0)
@@ -63,6 +64,8 @@ export function DailyEntryPage({ date, onDateChange }: DailyEntryPageProps) {
     await save({ cashIncome, cardIncome, uberEatsIncome, pandaIncome, foodCost, staffSalary, miscExpense, notes })
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+    // 儲存完成後立即嘗試同步（有網路才會真正執行）
+    onSync?.()
   }
 
   return (
