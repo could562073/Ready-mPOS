@@ -1,14 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { AmountInput } from '../components/AmountInput'
 import { useDailyRecord } from '../hooks/useDailyRecord'
-
-// 轉換為本地時間 YYYY-MM-DD，避免 UTC 偏移造成日期顯示錯誤
-function toLocalDateString(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
 
 const SYNC_LABEL: Record<string, string> = {
   PENDING: '🕐 待同步',
@@ -16,8 +8,12 @@ const SYNC_LABEL: Record<string, string> = {
   CONFLICT: '⚠️ 衝突，請確認',
 }
 
-export function DailyEntryPage() {
-  const [date, setDate] = useState(() => toLocalDateString(new Date()))
+interface DailyEntryPageProps {
+  date: string
+  onDateChange: (date: string) => void
+}
+
+export function DailyEntryPage({ date, onDateChange }: DailyEntryPageProps) {
   const { record, loading, save } = useDailyRecord(date)
 
   const [cashIncome, setCashIncome] = useState(0)
@@ -77,7 +73,7 @@ export function DailyEntryPage() {
         <input
           type="date"
           value={date}
-          onChange={(e) => setDate(e.target.value)}
+          onChange={(e) => onDateChange(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
@@ -121,9 +117,7 @@ export function DailyEntryPage() {
           <section className="bg-white rounded-2xl shadow-sm p-4">
             <div className="flex justify-between items-center">
               <span className="font-semibold text-gray-800">當日淨額</span>
-              <span
-                className={`text-xl font-bold ${net >= 0 ? 'text-green-600' : 'text-red-500'}`}
-              >
+              <span className={`text-xl font-bold ${net >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                 {net >= 0 ? '+' : ''}${fmt(net)}
               </span>
             </div>
