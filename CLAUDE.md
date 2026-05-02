@@ -1,7 +1,7 @@
 # CLAUDE.md - Ready-mPOS
 
-> **Documentation Version**: 1.0
-> **Last Updated**: 2026-05-02
+> **Documentation Version**: 1.1
+> **Last Updated**: 2026-05-03
 > **Project**: Ready-mPOS
 > **Description**: 店家記帳系統 — 給餐廳/咖啡廳老闆用的記帳 App，解決手寫記帳本的核心痛點
 > **Features**: Offline-first PWA, Google Sheets sync, JWT auth, Docker Compose dev env
@@ -49,10 +49,14 @@ Before starting any task:
 
 ### Development Status
 - **Phase**: Phase 1 MVP — 核心記帳功能，離線優先，Google Sheets 同步
-- **Setup**: In progress
-- **Core Features**: Not started
-- **Testing**: Not started
-- **Documentation**: In progress
+- **Setup**: ✅ Complete
+- **Frontend**: ✅ Complete — DailyEntryPage, MonthlyReportPage, useSyncService, api.ts
+- **Backend**: ✅ Complete — CRUD REST API, SecurityConfig, GlobalExceptionHandler
+- **Docker**: 🔄 In progress — docker-compose.yml 已建，待實際啟動驗證
+- **Testing**: ✅ Backend 8 integration tests passing (H2); Frontend tests not started
+- **Google Sheets Sync**: ⏳ Not started (Phase 1 後段)
+- **JWT Auth**: ⏳ Not started (Phase 2)
+- **Documentation**: ✅ ADR-001 完成
 
 ---
 
@@ -73,7 +77,7 @@ Ready-mPOS/
 - **Target**: Android browser-first, desktop-compatible
 
 ### Backend (`backend/`)
-- **Framework**: Spring Boot 3.x, Java 17, Maven
+- **Framework**: Spring Boot 3.x, Java 26 (JDK), Maven 3.9.x
 - **Auth**: Spring Security + JWT
 - **ORM**: Spring Data JPA
 - **DB**: PostgreSQL (each record has `sync_status` for offline sync)
@@ -99,8 +103,8 @@ Ready-mPOS/
 # Frontend dev server
 cd frontend && npm run dev
 
-# Backend dev server
-cd backend && ./mvnw spring-boot:run
+# Backend dev server (Windows: mvn; Linux: ./mvnw)
+cd backend && mvn spring-boot:run -Dspring.profiles.active=dev
 
 # Docker dev environment
 docker compose -f docker/docker-compose.yml up -d
@@ -109,13 +113,13 @@ docker compose -f docker/docker-compose.yml up -d
 cd frontend && npm test
 
 # Run backend tests
-cd backend && ./mvnw test
+cd backend && mvn test
 
 # Build frontend
 cd frontend && npm run build
 
 # Build backend
-cd backend && ./mvnw package -DskipTests
+cd backend && mvn package -DskipTests
 ```
 
 ---
