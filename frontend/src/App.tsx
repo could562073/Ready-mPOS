@@ -92,7 +92,6 @@ function App() {
             onRestore={restoreFromSheets}
             onClearLocal={clearLocalData}
             sheetName={sheetName}
-            sheetUrl={sheetUrl}
             onSetCustomSheet={setCustomSheet}
           />
         )}
