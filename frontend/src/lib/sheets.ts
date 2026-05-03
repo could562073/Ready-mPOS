@@ -4,7 +4,12 @@ const CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) 
 
 // 讓呼叫方可以檢查是否已設定 Client ID
 export const isGoogleConfigured = (): boolean => CLIENT_ID.length > 0
-const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email'
+const SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/userinfo.email',
+  // Drive metadata 僅用於搜尋同名試算表，確保跨裝置使用同一份檔案
+  'https://www.googleapis.com/auth/drive.metadata.readonly',
+].join(' ')
 
 // LS key for persisting spreadsheet preference
 const LS_EMAIL    = 'gsheets_email'
@@ -83,6 +88,42 @@ export function signOut(): void {
   }
   localStorage.removeItem(LS_EMAIL)
   // 試算表 ID 保留，下次登入同帳號可直接沿用；切換帳號時再手動重置
+}
+
+// 以名稱搜尋現有試算表，回傳第一個符合的 ID（無則回傳 null）
+async function findSpreadsheetByName(name: string, token: string): Promise<string | null> {
+  const q = `name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`
+  const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1&orderBy=modifiedTime+desc`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) return null
+  const data = (await res.json()) as { files: { id: string }[] }
+  return data.files[0]?.id ?? null
+}
+
+// 跨裝置統一入口：先搜尋同名試算表，找到即沿用，找不到才新建
+// 確保同一 Google 帳號在任何裝置都指向同一份試算表
+export async function getOrCreateSpreadsheet(title: string, initialSheetTitle?: string): Promise<string> {
+  const token = await acquireToken()
+
+  const existingId = await findSpreadsheetByName(title, token)
+  if (existingId) return existingId
+
+  // 不存在 → 建立新試算表
+  const body = {
+    properties: { title },
+    ...(initialSheetTitle && { sheets: [{ properties: { title: initialSheetTitle } }] }),
+  }
+  const res = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const msg = await res.text().catch(() => '')
+    throw new Error(`建立試算表失敗：${res.status} ${msg}`)
+  }
+  const data = (await res.json()) as { spreadsheetId: string }
+  return data.spreadsheetId
 }
 
 // 在使用者的 Google Drive 建立新試算表，回傳其 ID

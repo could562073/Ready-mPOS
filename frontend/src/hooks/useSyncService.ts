@@ -5,7 +5,7 @@ import {
   isGoogleConfigured,
   signIn as googleSignIn,
   signOut as googleSignOut,
-  createSpreadsheet,
+  getOrCreateSpreadsheet,
   pullAllFromSheets,
   getSignedInEmail,
   getSpreadsheetId,
@@ -107,11 +107,12 @@ export function useSyncService() {
       const email = await googleSignIn()
       setGoogleEmail(email)
 
-      // 首次登入且尚無試算表 → 自動建立
+      // 尚無本地試算表 ID → 搜尋 Drive 上同名檔案，找不到才新建
+      // 確保同一帳號在不同裝置指向同一份試算表
       if (!getSpreadsheetId()) {
         setCreating(true)
         const currentMonth = new Date().toISOString().slice(0, 7) // 'YYYY-MM'
-        const id = await createSpreadsheet(AUTO_SHEET_NAME, currentMonth)
+        const id = await getOrCreateSpreadsheet(AUTO_SHEET_NAME, currentMonth)
         setSpreadsheetId(id, AUTO_SHEET_NAME)
         setSheetName(AUTO_SHEET_NAME)
         setSheetUrl(getSpreadsheetUrl())
