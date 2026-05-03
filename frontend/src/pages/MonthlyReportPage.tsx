@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { T } from '../lib/tokens'
 import { fmt } from '../lib/fmt'
 import { Icon } from '../components/Icon'
@@ -138,9 +138,8 @@ interface Props {
 }
 
 export function MonthlyReportPage({ onSelectDate }: Props) {
-  const [month, setMonth]  = useState(() => toMonthString(new Date()))
-  const [view,  setView]   = useState<'chart' | 'list'>('chart')
-  const monthInputRef = useRef<HTMLInputElement>(null)
+  const [month, setMonth] = useState(() => toMonthString(new Date()))
+  const [view,  setView]  = useState<'chart' | 'list'>('chart')
   const { records, loading } = useMonthlyRecords(month)
 
   const totalIncome  = records.reduce((s, r) => s + dayIncome(r),  0)
@@ -152,26 +151,25 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* 月份選擇器 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 0' }}>
-        <div style={{ position: 'relative' }}>
-          <button
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '8px 14px', borderRadius: 999,
-              background: T.card, border: 'none', boxShadow: T.shadow.card,
-              fontSize: 14, fontWeight: 700, color: T.ink, cursor: 'pointer', fontFamily: T.font.sans,
-            }}
-          >
-            <Icon name="calendar" size={14} stroke={2.4} color={T.lavenderInk} />
-            {formatMonthLabel(month)}
-            <Icon name="chevron-d" size={14} stroke={2.4} color={T.muted} />
-          </button>
+        <label
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 14px', borderRadius: 999,
+            background: T.card, boxShadow: T.shadow.card,
+            fontSize: 14, fontWeight: 700, color: T.ink, cursor: 'pointer', fontFamily: T.font.sans,
+            position: 'relative',
+          }}
+        >
+          <Icon name="calendar" size={14} stroke={2.4} color={T.lavenderInk} />
+          {formatMonthLabel(month)}
+          <Icon name="chevron-d" size={14} stroke={2.4} color={T.muted} />
           <input
-            ref={monthInputRef}
-            type="month" value={month}
+            type="month"
+            value={month}
             onChange={e => setMonth(e.target.value)}
-            style={{ position: 'absolute', opacity: 0, top: 0, left: 0, width: '100%', height: '100%', zIndex: 1 }}
+            style={{ position: 'absolute', opacity: 0, top: 0, left: 0, width: '100%', height: '100%', cursor: 'pointer' }}
           />
-        </div>
+        </label>
         {/* 匯出 stub */}
         <button
           style={{
