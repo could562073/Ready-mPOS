@@ -44,7 +44,6 @@ export function useSyncService() {
     }
   }, [])
 
-  // syncAll を signIn より先に定義して参照できるようにする
   const syncAll = useCallback(async () => {
     const sheetId = getSpreadsheetId()
     if (lockRef.current || !navigator.onLine || !sheetId || !getSignedInEmail()) return
@@ -52,10 +51,22 @@ export function useSyncService() {
     setSyncing(true)
 
     try {
-      const pending = await db.dailyRecords.where('syncStatus').equals('PENDING').toArray()
-      if (pending.length === 0) return
+      // ── Phase 1: Pull（Sheets → 本機） ────────────────────
+      // Sheets 有但本機無 → 新增；本機已 SYNCED → 以 Sheets 覆蓋更新；PENDING → 保留本機修改
+      const sheetsRecords = await pullAllFromSheets(sheetId)
+      for (const r of sheetsRecords) {
+        const local = await db.dailyRecords.where('date').equals(r.date).first()
+        if (!local) {
+          await db.dailyRecords.add(r)
+        } else if (local.syncStatus === 'SYNCED') {
+          await db.dailyRecords.update(local.id!, { ...r, id: local.id })
+        }
+        // PENDING は本機修改優先、上書きしない
+      }
 
-      const months = [...new Set(pending.map(r => r.date.slice(0, 7)))]
+      // ── Phase 2: Push（本機 PENDING → Sheets） ───────────
+      const pending = await db.dailyRecords.where('syncStatus').equals('PENDING').toArray()
+      const months  = [...new Set(pending.map(r => r.date.slice(0, 7)))]
 
       for (const month of months) {
         const allForMonth = await db.dailyRecords
@@ -73,14 +84,14 @@ export function useSyncService() {
 
       setLastSyncedAt(new Date())
     } catch (err) {
-      console.error('[sync] Google Sheets sync failed:', err)
+      console.error('[sync] failed:', err)
     } finally {
       lockRef.current = false
       setSyncing(false)
     }
   }, [])
 
-  // 從雲端試算表還原所有資料到本機 IndexedDB（新裝置初次使用）
+  // 強制從雲端還原：覆蓋所有本機記錄（含 SYNCED），用於資料遺失或手動重置
   const restoreFromSheets = useCallback(async () => {
     const sheetId = getSpreadsheetId()
     if (!sheetId || !getSignedInEmail()) return
@@ -91,6 +102,9 @@ export function useSyncService() {
         const existing = await db.dailyRecords.where('date').equals(record.date).first()
         if (!existing) {
           await db.dailyRecords.add(record)
+        } else {
+          // 強制以雲端資料覆蓋（包含 PENDING 記錄）
+          await db.dailyRecords.update(existing.id!, { ...record, id: existing.id })
         }
       }
     } catch (err) {
@@ -119,13 +133,8 @@ export function useSyncService() {
         setCreating(false)
       }
 
-        // 登入後：有 PENDING 資料則上傳；本機無資料則從雲端還原
-      const localCount = await db.dailyRecords.count()
-      if (localCount === 0) {
-        restoreFromSheets()
-      } else {
-        syncAll()
-      }
+      // 登入後立即雙向同步：拉取雲端最新資料 + 推送本機 PENDING
+      syncAll()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[auth] sign-in failed:', msg)
