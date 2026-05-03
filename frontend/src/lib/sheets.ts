@@ -1,0 +1,181 @@
+import type { DailyRecord } from '../types'
+
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets'
+
+// LS key for persisting spreadsheet preference
+const LS_EMAIL = 'gsheets_email'
+const LS_SHEET_ID = 'gsheets_spreadsheet_id'
+
+interface TokenInfo {
+  access_token: string
+  expires_at: number // epoch ms
+}
+
+let tokenClient: any = null
+let tokenInfo: TokenInfo | null = null
+let pendingResolve: ((t: string) => void) | null = null
+let pendingReject: ((e: Error) => void) | null = null
+
+// GIS script が読み込まれた後に一度だけ呼ぶ
+export function initGoogleAuth(): void {
+  const g = (window as any).google
+  if (!g?.accounts?.oauth2 || !CLIENT_ID) return
+  tokenClient = g.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: (resp: any) => {
+      if (resp.error || !resp.access_token) {
+        pendingReject?.(new Error(resp.error ?? 'auth_failed'))
+      } else {
+        tokenInfo = {
+          access_token: resp.access_token,
+          // expires_in 通常 3600 秒，提前 60 秒更新
+          expires_at: Date.now() + ((resp.expires_in ?? 3600) - 60) * 1000,
+        }
+        pendingResolve?.(resp.access_token)
+      }
+      pendingResolve = pendingReject = null
+    },
+    error_callback: (err: any) => {
+      pendingReject?.(new Error(err?.type ?? 'auth_error'))
+      pendingResolve = pendingReject = null
+    },
+  })
+}
+
+// 取得有效 access token（已過期或首次則重新請求）
+function acquireToken(prompt: '' | 'consent' | 'select_account' = ''): Promise<string> {
+  if (tokenInfo && Date.now() < tokenInfo.expires_at) {
+    return Promise.resolve(tokenInfo.access_token)
+  }
+  if (!tokenClient) return Promise.reject(new Error('GIS not initialised'))
+  return new Promise((resolve, reject) => {
+    pendingResolve = resolve
+    pendingReject = reject
+    tokenClient.requestAccessToken({ prompt })
+  })
+}
+
+// ── 公開 Auth API ──────────────────────────────────────────
+
+// 彈出 Google 帳號選擇視窗，取得 email 後存入 localStorage
+export async function signIn(): Promise<string> {
+  const token = await acquireToken('select_account')
+  const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Failed to fetch user info')
+  const { email } = (await res.json()) as { email: string }
+  localStorage.setItem(LS_EMAIL, email)
+  return email
+}
+
+// 撤銷 token 並清除本地狀態
+export function signOut(): void {
+  if (tokenInfo) {
+    (window as any).google?.accounts.oauth2.revoke(tokenInfo.access_token)
+    tokenInfo = null
+  }
+  localStorage.removeItem(LS_EMAIL)
+}
+
+export const getSignedInEmail = (): string | null => localStorage.getItem(LS_EMAIL)
+export const getSpreadsheetId = (): string => localStorage.getItem(LS_SHEET_ID) ?? ''
+export const setSpreadsheetId = (id: string): void => localStorage.setItem(LS_SHEET_ID, id)
+
+// ── Sheets API helpers ─────────────────────────────────────
+
+async function sheetsGet<T>(path: string, token: string): Promise<T> {
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`Sheets GET ${path} → ${res.status}: ${body}`)
+  }
+  return res.json() as Promise<T>
+}
+
+async function sheetsPost(path: string, body: unknown, token: string): Promise<void> {
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const msg = await res.text().catch(() => '')
+    throw new Error(`Sheets POST ${path} → ${res.status}: ${msg}`)
+  }
+}
+
+async function sheetsPut(path: string, body: unknown, token: string): Promise<void> {
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets${path}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const msg = await res.text().catch(() => '')
+    throw new Error(`Sheets PUT ${path} → ${res.status}: ${msg}`)
+  }
+}
+
+// 取得試算表內所有 sheet tab 名稱
+async function getSheetTitles(spreadsheetId: string, token: string): Promise<string[]> {
+  const data = await sheetsGet<{ sheets: { properties: { title: string } }[] }>(
+    `/${spreadsheetId}?fields=sheets.properties.title`,
+    token,
+  )
+  return data.sheets.map(s => s.properties.title)
+}
+
+// 若指定月份的 tab 不存在則新增
+async function ensureMonthSheet(spreadsheetId: string, month: string, token: string): Promise<void> {
+  const titles = await getSheetTitles(spreadsheetId, token)
+  if (titles.includes(month)) return
+  await sheetsPost(`/${spreadsheetId}:batchUpdate`, {
+    requests: [{ addSheet: { properties: { title: month } } }],
+  }, token)
+}
+
+// 試算表欄位定義
+const HEADERS = [
+  '日期', '現金', '刷卡', 'Uber Eats', '熊貓外送',
+  '食材成本', '員工薪資', '雜支', '備註', '總收入', '總支出', '淨利',
+]
+
+function recordToRow(r: DailyRecord): (string | number)[] {
+  const income  = r.cashIncome + r.cardIncome + r.uberEatsIncome + r.pandaIncome
+  const expense = r.foodCost + r.staffSalary + r.miscExpense
+  return [
+    r.date,
+    r.cashIncome, r.cardIncome, r.uberEatsIncome, r.pandaIncome,
+    r.foodCost, r.staffSalary, r.miscExpense,
+    r.notes ?? '',
+    income, expense, income - expense,
+  ]
+}
+
+// ── 核心同步函式 ───────────────────────────────────────────
+
+// 將某月所有記錄整批寫入 Google Sheets（覆蓋式，確保試算表與本地一致）
+export async function syncMonthToSheets(
+  spreadsheetId: string,
+  month: string,           // 'YYYY-MM'
+  records: DailyRecord[],  // 該月所有記錄，依日期排序
+): Promise<void> {
+  const token = await acquireToken()
+
+  // 確保該月 tab 存在
+  await ensureMonthSheet(spreadsheetId, month, token)
+
+  // 第一列表頭 + 後續資料列
+  const values: (string | number)[][] = [HEADERS, ...records.map(recordToRow)]
+
+  await sheetsPut(
+    `/${spreadsheetId}/values/${encodeURIComponent(month + '!A1')}?valueInputOption=USER_ENTERED`,
+    { range: `${month}!A1`, majorDimension: 'ROWS', values },
+    token,
+  )
+}

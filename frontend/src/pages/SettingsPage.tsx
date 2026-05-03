@@ -5,6 +5,11 @@ import { Icon } from '../components/Icon'
 interface Props {
   syncing: boolean
   onSync?: () => void
+  googleEmail: string | null
+  onSignIn: () => Promise<void>
+  onSignOut: () => void
+  spreadsheetId: string
+  onSpreadsheetIdChange: (id: string) => void
 }
 
 // iOS 風格 Toggle 開關
@@ -66,9 +71,27 @@ function SettingRow({
   )
 }
 
-export function SettingsPage({ syncing, onSync }: Props) {
-  const [autoSync, setAutoSync]   = useState(true)
-  const [reminder, setReminder]   = useState(true)
+export function SettingsPage({
+  syncing, onSync,
+  googleEmail, onSignIn, onSignOut,
+  spreadsheetId, onSpreadsheetIdChange,
+}: Props) {
+  const [autoSync, setAutoSync]     = useState(true)
+  const [reminder, setReminder]     = useState(true)
+  const [signingIn, setSigningIn]   = useState(false)
+  const [sheetInput, setSheetInput] = useState(spreadsheetId)
+  const [sheetSaved, setSheetSaved] = useState(false)
+
+  const handleSignIn = async () => {
+    setSigningIn(true)
+    try { await onSignIn() } finally { setSigningIn(false) }
+  }
+
+  const handleSaveSheetId = () => {
+    onSpreadsheetIdChange(sheetInput.trim())
+    setSheetSaved(true)
+    setTimeout(() => setSheetSaved(false), 2000)
+  }
 
   return (
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -99,51 +122,118 @@ export function SettingsPage({ syncing, onSync }: Props) {
         </button>
       </div>
 
-      {/* 同步狀態 */}
-      <div style={{ background: T.card, borderRadius: T.r.lg, padding: '14px 16px', boxShadow: T.shadow.card }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 13, position: 'relative',
-            background: T.mintSoft, color: T.mintInk,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Icon name="cloud-check" size={20} stroke={2.2} />
-            <span style={{
-              position: 'absolute', top: 0, right: 0,
-              width: 10, height: 10, borderRadius: 5, background: T.mint,
-              border: '2px solid #fff',
-            }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>離線優先，連網自動同步</div>
-            <div style={{ fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 2 }}>
-              {syncing ? '同步中…' : '資料已儲存到本機'}
-            </div>
-          </div>
-          <button
-            onClick={onSync}
-            style={{
-              padding: '6px 12px', borderRadius: 999,
-              background: T.bg, border: 'none',
-              fontSize: 12, fontWeight: 700, color: T.ink2, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 4, fontFamily: T.font.sans,
-            }}
-          >
-            <Icon name="sync" size={12} stroke={2.6} />
-            同步
-          </button>
-        </div>
-      </div>
-
-      {/* 類別管理 */}
+      {/* Google Sheets 同步設定卡 */}
       <div>
         <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, padding: '4px 4px 8px', letterSpacing: 0.4, textTransform: 'uppercase' }}>
-          類別管理
+          Google Sheets 雲端同步
         </div>
         <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
-          <SettingRow icon="arrow-up"  color={{ soft: T.mintSoft,  ink: T.mintInk  }} title="收入類別"     subtitle="現金、刷卡、Uber Eats、foodpanda" />
-          <SettingRow icon="arrow-down" color={{ soft: T.coralSoft, ink: T.coralInk }} title="支出類別"     subtitle="食材、薪資、雜支" />
-          <SettingRow icon="package"   color={{ soft: T.uberSoft,  ink: T.uberInk  }} title="外送平台費率" subtitle="Uber 30% · foodpanda 35%" isLast />
+
+          {/* 帳號連結列 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${T.hairline}` }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 11, flexShrink: 0,
+              background: T.mintSoft, color: T.mintInk,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Icon name="cloud" size={18} stroke={2.2} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>Google 帳號</div>
+              <div style={{ fontSize: 11, color: googleEmail ? T.mintInk : T.muted, fontWeight: 600, marginTop: 2 }}>
+                {googleEmail ?? '尚未連結'}
+              </div>
+            </div>
+            {googleEmail ? (
+              <button
+                onClick={onSignOut}
+                style={{
+                  padding: '6px 12px', borderRadius: 999, border: 'none',
+                  background: T.coralSoft, color: T.coralInk,
+                  fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: T.font.sans,
+                }}
+              >
+                登出
+              </button>
+            ) : (
+              <button
+                onClick={handleSignIn}
+                disabled={signingIn}
+                style={{
+                  padding: '6px 12px', borderRadius: 999, border: 'none',
+                  background: T.mintSoft, color: T.mintInk,
+                  fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: T.font.sans,
+                  opacity: signingIn ? 0.6 : 1,
+                }}
+              >
+                {signingIn ? '連結中…' : '連結帳號'}
+              </button>
+            )}
+          </div>
+
+          {/* 試算表 ID 輸入 */}
+          <div style={{ padding: '14px 16px', borderBottom: `1px solid ${T.hairline}` }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>試算表 ID</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={sheetInput}
+                onChange={e => setSheetInput(e.target.value)}
+                placeholder="從 Google Sheets URL 複製"
+                style={{
+                  flex: 1, padding: '8px 12px', borderRadius: T.r.sm,
+                  border: `1.5px solid ${T.hairline}`, fontSize: 12,
+                  fontFamily: T.font.sans, color: T.ink, background: T.bg,
+                  outline: 'none',
+                }}
+              />
+              <button
+                onClick={handleSaveSheetId}
+                style={{
+                  padding: '8px 14px', borderRadius: T.r.sm, border: 'none',
+                  background: sheetSaved ? T.mintSoft : T.ink,
+                  color: sheetSaved ? T.mintInk : '#fff',
+                  fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  fontFamily: T.font.sans, transition: 'all 200ms', flexShrink: 0,
+                }}
+              >
+                {sheetSaved ? '已儲存 ✓' : '儲存'}
+              </button>
+            </div>
+            <div style={{ fontSize: 10, color: T.muted, marginTop: 6, lineHeight: 1.5 }}>
+              從試算表網址複製：…/spreadsheets/d/<strong>這段ID</strong>/edit
+            </div>
+          </div>
+
+          {/* 立即同步按鈕 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px' }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 11, flexShrink: 0,
+              background: T.skySoft, color: T.skyInk,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Icon name="sync" size={18} stroke={2.2} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>同步狀態</div>
+              <div style={{ fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 2 }}>
+                {syncing ? '同步中…' : googleEmail ? '資料已儲存到本機' : '請先連結 Google 帳號'}
+              </div>
+            </div>
+            <button
+              onClick={onSync}
+              disabled={syncing || !googleEmail || !sheetInput}
+              style={{
+                padding: '6px 12px', borderRadius: 999,
+                background: T.bg, border: 'none',
+                fontSize: 12, fontWeight: 700, color: T.ink2, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 4, fontFamily: T.font.sans,
+                opacity: (!googleEmail || !sheetInput) ? 0.4 : 1,
+              }}
+            >
+              <Icon name="sync" size={12} stroke={2.6} />
+              立即同步
+            </button>
+          </div>
         </div>
       </div>
 
@@ -155,7 +245,7 @@ export function SettingsPage({ syncing, onSync }: Props) {
         <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
           <SettingRow
             icon="cloud" color={{ soft: T.skySoft, ink: T.skyInk }}
-            title="自動同步" subtitle="每筆變更即時上傳"
+            title="自動同步" subtitle="連網後自動上傳未同步資料"
             right={<Toggle on={autoSync} onChange={setAutoSync} />}
           />
           <SettingRow
@@ -163,18 +253,18 @@ export function SettingsPage({ syncing, onSync }: Props) {
             title="打烊提醒" subtitle="每晚 22:30 提醒記帳"
             right={<Toggle on={reminder} onChange={setReminder} />}
           />
-          <SettingRow icon="camera" color={{ soft: T.peachSoft, ink: T.peachInk }} title="發票 OCR 辨識" subtitle="拍照自動填入金額" isLast />
+          <SettingRow icon="package" color={{ soft: T.uberSoft, ink: T.uberInk }} title="外送平台費率" subtitle="Uber 30% · foodpanda 35%" isLast />
         </div>
       </div>
 
-      {/* 資料 */}
+      {/* 類別管理 */}
       <div>
         <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, padding: '4px 4px 8px', letterSpacing: 0.4, textTransform: 'uppercase' }}>
-          資料
+          類別管理
         </div>
         <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
-          <SettingRow icon="receipt"     color={{ soft: T.lavenderSoft, ink: T.lavenderInk }} title="匯出對帳單"  subtitle="PDF / CSV / Google Sheets" />
-          <SettingRow icon="cloud-check" color={{ soft: T.mintSoft,     ink: T.mintInk     }} title="本地備份"    subtitle="IndexedDB 離線儲存" isLast />
+          <SettingRow icon="arrow-up"   color={{ soft: T.mintSoft,  ink: T.mintInk  }} title="收入類別" subtitle="現金、刷卡、Uber Eats、foodpanda" />
+          <SettingRow icon="arrow-down" color={{ soft: T.coralSoft, ink: T.coralInk }} title="支出類別" subtitle="食材、薪資、雜支" isLast />
         </div>
       </div>
 

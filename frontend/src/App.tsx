@@ -30,7 +30,7 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(
     () => !localStorage.getItem('mpos_onboarded')
   )
-  const { syncing, syncAll } = useSyncService()
+  const { syncing, syncAll, googleEmail, signIn, signOut, spreadsheetId, setSpreadsheetId } = useSyncService()
 
   // 月結報表點擊某天 → 切換到每日記帳並帶入選定日期
   const handleSelectDate = (date: string) => {
@@ -73,7 +73,15 @@ function App() {
           <MonthlyReportPage onSelectDate={handleSelectDate} />
         )}
         {tab === 'settings' && (
-          <SettingsPage syncing={syncing} onSync={syncAll} />
+          <SettingsPage
+            syncing={syncing}
+            onSync={syncAll}
+            googleEmail={googleEmail}
+            onSignIn={signIn}
+            onSignOut={signOut}
+            spreadsheetId={spreadsheetId}
+            onSpreadsheetIdChange={setSpreadsheetId}
+          />
         )}
       </div>
 
