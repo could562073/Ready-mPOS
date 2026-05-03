@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { T } from '../lib/tokens'
 import { fmt } from '../lib/fmt'
 import { Icon } from '../components/Icon'
@@ -140,6 +140,7 @@ interface Props {
 export function MonthlyReportPage({ onSelectDate }: Props) {
   const [month, setMonth] = useState(() => toMonthString(new Date()))
   const [view,  setView]  = useState<'chart' | 'list'>('chart')
+  const monthInputRef = useRef<HTMLInputElement>(null)
   const { records, loading } = useMonthlyRecords(month)
 
   const totalIncome  = records.reduce((s, r) => s + dayIncome(r),  0)
@@ -151,14 +152,18 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* 月份選擇器 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 0' }}>
-        {/* 外層 inline-block 尺寸貼合內容；input 以四向 0 明確覆蓋；視覺層 pointer-events:none 確保事件直達 input */}
-        <div style={{ position: 'relative', display: 'inline-block' }}>
+        {/* onClick 呼叫 showPicker() 解決 desktop 必須點到隱藏日曆圖示才能開啟的問題 */}
+        {/* overlay input 保留讓 iOS 直接觸碰時能打開原生選擇器 */}
+        <div
+          style={{ position: 'relative', display: 'inline-block', cursor: 'pointer' }}
+          onClick={() => { try { monthInputRef.current?.showPicker() } catch {} }}
+        >
           <div
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
               padding: '8px 14px', borderRadius: 999,
               background: T.card, boxShadow: T.shadow.card,
-              fontSize: 14, fontWeight: 700, color: T.ink, cursor: 'pointer', fontFamily: T.font.sans,
+              fontSize: 14, fontWeight: 700, color: T.ink, fontFamily: T.font.sans,
               pointerEvents: 'none',
             }}
           >
@@ -167,10 +172,12 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
             <Icon name="chevron-d" size={14} stroke={2.4} color={T.muted} />
           </div>
           <input
+            ref={monthInputRef}
             type="month"
             value={month}
             onChange={e => setMonth(e.target.value)}
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0, cursor: 'pointer', zIndex: 1 }}
+            onClick={e => e.stopPropagation()}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0, cursor: 'pointer' }}
           />
         </div>
         {/* 匯出 stub */}

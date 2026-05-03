@@ -112,6 +112,7 @@ export function DailyEntryPage({ date, onDateChange, onSync }: DailyEntryPagePro
   const [notes,          setNotes]          = useState('')
   const [saved,    setSaved]    = useState(false)
   const [focusKey, setFocusKey] = useState<string | null>(null)
+  const dateInputRef = useRef<HTMLInputElement>(null)
 
   // 載入既有紀錄填入表單
   useEffect(() => {
@@ -160,16 +161,19 @@ export function DailyEntryPage({ date, onDateChange, onSync }: DailyEntryPagePro
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* 日期選擇 + 自動儲存狀態 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px' }}>
-        {/* 外層 inline-block 尺寸貼合內容；input 以四向 0 明確覆蓋；視覺層 pointer-events:none 確保事件直達 input */}
-        <div style={{ position: 'relative', display: 'inline-block' }}>
+        {/* onClick 呼叫 showPicker() 解決 desktop 必須點到隱藏日曆圖示才能開啟的問題 */}
+        {/* overlay input 保留讓 iOS 直接觸碰時能打開原生選擇器 */}
+        <div
+          style={{ position: 'relative', display: 'inline-block', cursor: 'pointer' }}
+          onClick={() => { try { dateInputRef.current?.showPicker() } catch {} }}
+        >
           <div
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
               padding: '8px 14px', borderRadius: 999,
               background: T.card, boxShadow: T.shadow.card,
               fontSize: 14, fontWeight: 700, color: T.ink,
-              fontFamily: T.font.sans, cursor: 'pointer',
-              pointerEvents: 'none',
+              fontFamily: T.font.sans, pointerEvents: 'none',
             }}
           >
             <Icon name="calendar" size={14} stroke={2.4} color={T.lavenderInk} />
@@ -177,10 +181,12 @@ export function DailyEntryPage({ date, onDateChange, onSync }: DailyEntryPagePro
             <Icon name="chevron-d" size={14} stroke={2.4} color={T.muted} />
           </div>
           <input
+            ref={dateInputRef}
             type="date"
             value={date}
             onChange={e => onDateChange(e.target.value)}
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0, cursor: 'pointer', zIndex: 1 }}
+            onClick={e => e.stopPropagation()}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0, cursor: 'pointer' }}
           />
         </div>
         <div
