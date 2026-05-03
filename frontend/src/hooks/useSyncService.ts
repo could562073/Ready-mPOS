@@ -42,44 +42,7 @@ export function useSyncService() {
     }
   }, [])
 
-  const signIn = useCallback(async () => {
-    setSignInError(null)
-    setCreating(false)
-    try {
-      const email = await googleSignIn()
-      setGoogleEmail(email)
-
-      // 首次登入且尚無試算表 → 自動建立
-      if (!getSpreadsheetId()) {
-        setCreating(true)
-        const id = await createSpreadsheet(AUTO_SHEET_NAME)
-        setSpreadsheetId(id, AUTO_SHEET_NAME)
-        setSheetName(AUTO_SHEET_NAME)
-        setSheetUrl(getSpreadsheetUrl())
-        setCreating(false)
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error('[auth] sign-in failed:', msg)
-      setSignInError(msg)
-      setCreating(false)
-    }
-  }, [])
-
-  const signOut = useCallback(() => {
-    googleSignOut()  // 同時清除 LS_SHEET_ID / LS_SHEET_NAME
-    setGoogleEmail(null)
-    setSheetName('')
-    setSheetUrl('')
-  }, [])
-
-  // 進階：使用者手動指定現有試算表 ID
-  const setCustomSheet = useCallback((id: string, name: string) => {
-    setSpreadsheetId(id, name)
-    setSheetName(name)
-    setSheetUrl(getSpreadsheetUrl())
-  }, [])
-
+  // syncAll を signIn より先に定義して参照できるようにする
   const syncAll = useCallback(async () => {
     const sheetId = getSpreadsheetId()
     if (lockRef.current || !navigator.onLine || !sheetId || !getSignedInEmail()) return
@@ -114,6 +77,48 @@ export function useSyncService() {
       setSyncing(false)
     }
   }, [])
+
+  const signIn = useCallback(async () => {
+    setSignInError(null)
+    setCreating(false)
+    try {
+      const email = await googleSignIn()
+      setGoogleEmail(email)
+
+      // 首次登入且尚無試算表 → 自動建立
+      if (!getSpreadsheetId()) {
+        setCreating(true)
+        const id = await createSpreadsheet(AUTO_SHEET_NAME)
+        setSpreadsheetId(id, AUTO_SHEET_NAME)
+        setSheetName(AUTO_SHEET_NAME)
+        setSheetUrl(getSpreadsheetUrl())
+        setCreating(false)
+      }
+
+      // 登入 + 試算表就緒後立即同步所有 PENDING 資料
+      syncAll()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[auth] sign-in failed:', msg)
+      setSignInError(msg)
+      setCreating(false)
+    }
+  }, [syncAll])
+
+  const signOut = useCallback(() => {
+    googleSignOut()
+    setGoogleEmail(null)
+    setSheetName('')
+    setSheetUrl('')
+  }, [])
+
+  const setCustomSheet = useCallback((id: string, name: string) => {
+    setSpreadsheetId(id, name)
+    setSheetName(name)
+    setSheetUrl(getSpreadsheetUrl())
+    // 套用新試算表後立即同步
+    syncAll()
+  }, [syncAll])
 
   useEffect(() => {
     window.addEventListener('online', syncAll)
