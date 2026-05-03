@@ -34,6 +34,7 @@ function App() {
     syncing, syncAll,
     googleEmail, signIn, signOut, signInError, creating,
     restoring, restoreFromSheets,
+    clearLocalData,
     isConfigured, sheetName, sheetUrl, setCustomSheet,
   } = useSyncService()
 
@@ -89,6 +90,7 @@ function App() {
             creating={creating}
             restoring={restoring}
             onRestore={restoreFromSheets}
+            onClearLocal={clearLocalData}
             sheetName={sheetName}
             sheetUrl={sheetUrl}
             onSetCustomSheet={setCustomSheet}

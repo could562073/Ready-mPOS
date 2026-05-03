@@ -13,6 +13,7 @@ interface Props {
   creating: boolean
   restoring: boolean
   onRestore: () => void
+  onClearLocal: () => Promise<void>
   sheetName: string
   sheetUrl: string
   onSetCustomSheet: (id: string, name: string) => void
@@ -72,7 +73,7 @@ function SettingRow({
 export function SettingsPage({
   syncing, onSync,
   googleEmail, onSignIn, onSignOut, signInError, isConfigured, creating,
-  restoring, onRestore,
+  restoring, onRestore, onClearLocal,
   sheetName, sheetUrl, onSetCustomSheet,
 }: Props) {
   const [autoSync, setAutoSync]         = useState(true)
@@ -312,6 +313,31 @@ export function SettingsPage({
         <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
           <SettingRow icon="arrow-up"   color={{ soft: T.mintSoft,  ink: T.mintInk  }} title="收入類別" subtitle="現金、刷卡、Uber Eats、foodpanda" />
           <SettingRow icon="arrow-down" color={{ soft: T.coralSoft, ink: T.coralInk }} title="支出類別" subtitle="食材、薪資、雜支" isLast />
+        </div>
+      </div>
+
+      {/* 資料管理 */}
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, padding: '4px 4px 8px', letterSpacing: 0.4, textTransform: 'uppercase' }}>資料管理</div>
+        <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px' }}>
+            <div style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: T.coralSoft, color: T.coralInk, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="x" size={18} stroke={2.4} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>清除本機資料</div>
+              <div style={{ fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 2 }}>僅刪除此裝置的記錄，雲端試算表不受影響</div>
+            </div>
+            <button
+              onClick={async () => {
+                if (!window.confirm('確定要清除此裝置的所有本機資料嗎？\n\n此操作不可還原，雲端試算表的資料不受影響。')) return
+                await onClearLocal()
+              }}
+              style={{ padding: '6px 12px', borderRadius: 999, background: T.coralSoft, border: 'none', fontSize: 12, fontWeight: 700, color: T.coralInk, cursor: 'pointer', fontFamily: T.font.sans, flexShrink: 0 }}
+            >
+              清除
+            </button>
+          </div>
         </div>
       </div>
 

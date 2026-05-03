@@ -96,10 +96,12 @@ export function useSyncService() {
   const restoreFromSheets = useCallback(async () => {
     const sheetId = getSpreadsheetId()
     if (!sheetId || !getSignedInEmail()) return
+    // 防止與進行中的 syncAll 產生 race condition（syncAll 可能正在把舊 PENDING 推上雲端）
+    if (lockRef.current) return
+    lockRef.current = true
     setRestoring(true)
     try {
       const records = await pullAllFromSheets(sheetId)
-      // 先清空本機，確保雲端刪除的記錄也從本機移除
       await db.dailyRecords.clear()
       if (records.length > 0) {
         await db.dailyRecords.bulkAdd(records)
@@ -107,8 +109,14 @@ export function useSyncService() {
     } catch (err) {
       console.error('[restore] failed:', err)
     } finally {
+      lockRef.current = false
       setRestoring(false)
     }
+  }, [])
+
+  // 清除本機所有資料（不影響雲端試算表）
+  const clearLocalData = useCallback(async () => {
+    await db.dailyRecords.clear()
   }, [])
 
   const signIn = useCallback(async () => {
@@ -174,6 +182,7 @@ export function useSyncService() {
     creating,
     restoring,
     restoreFromSheets,
+    clearLocalData,
     isConfigured: isGoogleConfigured(),
     sheetName,
     sheetUrl,
