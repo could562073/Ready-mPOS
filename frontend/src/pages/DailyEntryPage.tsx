@@ -163,7 +163,6 @@ export function DailyEntryPage({ date, onDateChange, onSync }: DailyEntryPagePro
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px' }}>
         <div style={{ position: 'relative' }}>
           <button
-            onClick={() => { setTimeout(() => dateInputRef.current?.showPicker?.(), 50) }}
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
               padding: '8px 14px', borderRadius: 999,
@@ -183,7 +182,7 @@ export function DailyEntryPage({ date, onDateChange, onSync }: DailyEntryPagePro
             type="date"
             value={date}
             onChange={e => { onDateChange(e.target.value) }}
-            style={{ position: 'absolute', opacity: 0, top: 0, left: 0, width: '100%', height: '100%', cursor: 'pointer', zIndex: -1 }}
+            style={{ position: 'absolute', opacity: 0, top: 0, left: 0, width: '100%', height: '100%', cursor: 'pointer', zIndex: 1 }}
           />
         </div>
         <div

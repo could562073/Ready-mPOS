@@ -6,6 +6,7 @@ import {
   signIn as googleSignIn,
   signOut as googleSignOut,
   createSpreadsheet,
+  pullAllFromSheets,
   getSignedInEmail,
   getSpreadsheetId,
   getSpreadsheetName,
@@ -24,6 +25,7 @@ export function useSyncService() {
   const [sheetUrl, setSheetUrl]         = useState<string>(() => getSpreadsheetUrl())
   const [signInError, setSignInError]   = useState<string | null>(null)
   const [creating, setCreating]         = useState(false)
+  const [restoring, setRestoring]       = useState(false)
   const lockRef = useRef(false)
 
   // GIS script が非同期で読み込まれるため、ロード完了後に初期化
@@ -78,6 +80,26 @@ export function useSyncService() {
     }
   }, [])
 
+  // 從雲端試算表還原所有資料到本機 IndexedDB（新裝置初次使用）
+  const restoreFromSheets = useCallback(async () => {
+    const sheetId = getSpreadsheetId()
+    if (!sheetId || !getSignedInEmail()) return
+    setRestoring(true)
+    try {
+      const records = await pullAllFromSheets(sheetId)
+      for (const record of records) {
+        const existing = await db.dailyRecords.where('date').equals(record.date).first()
+        if (!existing) {
+          await db.dailyRecords.add(record)
+        }
+      }
+    } catch (err) {
+      console.error('[restore] failed:', err)
+    } finally {
+      setRestoring(false)
+    }
+  }, [])
+
   const signIn = useCallback(async () => {
     setSignInError(null)
     setCreating(false)
@@ -96,15 +118,20 @@ export function useSyncService() {
         setCreating(false)
       }
 
-      // 登入 + 試算表就緒後立即同步所有 PENDING 資料
-      syncAll()
+        // 登入後：有 PENDING 資料則上傳；本機無資料則從雲端還原
+      const localCount = await db.dailyRecords.count()
+      if (localCount === 0) {
+        restoreFromSheets()
+      } else {
+        syncAll()
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[auth] sign-in failed:', msg)
       setSignInError(msg)
       setCreating(false)
     }
-  }, [syncAll])
+  }, [syncAll, restoreFromSheets])
 
   const signOut = useCallback(() => {
     googleSignOut()
@@ -117,7 +144,6 @@ export function useSyncService() {
     setSpreadsheetId(id, name)
     setSheetName(name)
     setSheetUrl(getSpreadsheetUrl())
-    // 套用新試算表後立即同步
     syncAll()
   }, [syncAll])
 
@@ -136,6 +162,8 @@ export function useSyncService() {
     signOut,
     signInError,
     creating,
+    restoring,
+    restoreFromSheets,
     isConfigured: isGoogleConfigured(),
     sheetName,
     sheetUrl,

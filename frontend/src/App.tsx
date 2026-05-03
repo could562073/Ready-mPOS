@@ -33,6 +33,7 @@ function App() {
   const {
     syncing, syncAll,
     googleEmail, signIn, signOut, signInError, creating,
+    restoring, restoreFromSheets,
     isConfigured, sheetName, sheetUrl, setCustomSheet,
   } = useSyncService()
 
@@ -86,6 +87,8 @@ function App() {
             signInError={signInError}
             isConfigured={isConfigured}
             creating={creating}
+            restoring={restoring}
+            onRestore={restoreFromSheets}
             sheetName={sheetName}
             sheetUrl={sheetUrl}
             onSetCustomSheet={setCustomSheet}

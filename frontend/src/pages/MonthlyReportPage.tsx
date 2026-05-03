@@ -154,7 +154,6 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 0' }}>
         <div style={{ position: 'relative' }}>
           <button
-            onClick={() => setTimeout(() => monthInputRef.current?.showPicker?.(), 50)}
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
               padding: '8px 14px', borderRadius: 999,
@@ -170,7 +169,7 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
             ref={monthInputRef}
             type="month" value={month}
             onChange={e => setMonth(e.target.value)}
-            style={{ position: 'absolute', opacity: 0, top: 0, left: 0, width: '100%', height: '100%', zIndex: -1 }}
+            style={{ position: 'absolute', opacity: 0, top: 0, left: 0, width: '100%', height: '100%', zIndex: 1 }}
           />
         </div>
         {/* 匯出 stub */}

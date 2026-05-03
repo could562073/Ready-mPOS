@@ -11,6 +11,8 @@ interface Props {
   signInError: string | null
   isConfigured: boolean
   creating: boolean
+  restoring: boolean
+  onRestore: () => void
   sheetName: string
   sheetUrl: string
   onSetCustomSheet: (id: string, name: string) => void
@@ -70,6 +72,7 @@ function SettingRow({
 export function SettingsPage({
   syncing, onSync,
   googleEmail, onSignIn, onSignOut, signInError, isConfigured, creating,
+  restoring, onRestore,
   sheetName, sheetUrl, onSetCustomSheet,
 }: Props) {
   const [autoSync, setAutoSync]         = useState(true)
@@ -213,6 +216,24 @@ export function SettingsPage({
                     開啟 <Icon name="chevron-r" size={12} color={T.mintInk} stroke={2.6} />
                   </a>
                 )}
+              </div>
+
+              {/* 從雲端還原列 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${T.hairline}` }}>
+                <div style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: T.lavenderSoft, color: T.lavenderInk, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="cloud-check" size={18} stroke={2.2} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>從雲端還原資料</div>
+                  <div style={{ fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 2 }}>新裝置或清除資料後使用</div>
+                </div>
+                <button
+                  onClick={onRestore}
+                  disabled={restoring}
+                  style={{ padding: '6px 12px', borderRadius: 999, background: T.lavenderSoft, border: 'none', fontSize: 12, fontWeight: 700, color: T.lavenderInk, cursor: 'pointer', fontFamily: T.font.sans, opacity: restoring ? 0.5 : 1 }}
+                >
+                  {restoring ? '還原中…' : '還原'}
+                </button>
               </div>
 
               {/* 立即同步列 */}

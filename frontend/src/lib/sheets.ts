@@ -82,7 +82,7 @@ export function signOut(): void {
     tokenInfo = null
   }
   localStorage.removeItem(LS_EMAIL)
-  clearSpreadsheet()
+  // 試算表 ID 保留，下次登入同帳號可直接沿用；切換帳號時再手動重置
 }
 
 // 在使用者的 Google Drive 建立新試算表，回傳其 ID
@@ -195,6 +195,53 @@ function recordToRow(r: DailyRecord): (string | number)[] {
     r.notes ?? '',
     income, expense, income - expense,
   ]
+}
+
+// 從試算表讀取某月資料列（跳過第一列表頭）
+async function readSheetRows(spreadsheetId: string, month: string, token: string): Promise<string[][]> {
+  try {
+    const data = await sheetsGet<{ values?: string[][] }>(
+      `/${spreadsheetId}/values/${encodeURIComponent(month + '!A2:I')}`,
+      token,
+    )
+    return data.values ?? []
+  } catch {
+    return []
+  }
+}
+
+// 從雲端試算表還原所有月份資料（新裝置初次使用）
+export async function pullAllFromSheets(spreadsheetId: string): Promise<DailyRecord[]> {
+  const token = await acquireToken()
+  const titles = await getSheetTitles(spreadsheetId, token)
+
+  // 只處理格式為 YYYY-MM 的 tab
+  const monthTabs = titles.filter(t => /^\d{4}-\d{2}$/.test(t))
+  const records: DailyRecord[] = []
+  const now = new Date().toISOString()
+
+  for (const month of monthTabs) {
+    const rows = await readSheetRows(spreadsheetId, month, token)
+    for (const row of rows) {
+      if (!row[0]) continue
+      records.push({
+        date:           row[0],
+        cashIncome:     Number(row[1]) || 0,
+        cardIncome:     Number(row[2]) || 0,
+        uberEatsIncome: Number(row[3]) || 0,
+        pandaIncome:    Number(row[4]) || 0,
+        foodCost:       Number(row[5]) || 0,
+        staffSalary:    Number(row[6]) || 0,
+        miscExpense:    Number(row[7]) || 0,
+        notes:          row[8] ?? '',
+        syncStatus:     'SYNCED',
+        createdAt:      now,
+        updatedAt:      now,
+      })
+    }
+  }
+
+  return records
 }
 
 // ── 核心同步函式 ───────────────────────────────────────────
