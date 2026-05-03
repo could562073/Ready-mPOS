@@ -4,4 +4,6 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // GitHub Pages 部署路徑 — 對應 https://could562073.github.io/Ready-mPOS/
+  base: '/Ready-mPOS/',
 })
