@@ -88,7 +88,8 @@ export function useSyncService() {
       // 首次登入且尚無試算表 → 自動建立
       if (!getSpreadsheetId()) {
         setCreating(true)
-        const id = await createSpreadsheet(AUTO_SHEET_NAME)
+        const currentMonth = new Date().toISOString().slice(0, 7) // 'YYYY-MM'
+        const id = await createSpreadsheet(AUTO_SHEET_NAME, currentMonth)
         setSpreadsheetId(id, AUTO_SHEET_NAME)
         setSheetName(AUTO_SHEET_NAME)
         setSheetUrl(getSpreadsheetUrl())

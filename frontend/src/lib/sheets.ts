@@ -86,12 +86,17 @@ export function signOut(): void {
 }
 
 // 在使用者的 Google Drive 建立新試算表，回傳其 ID
-export async function createSpreadsheet(title: string): Promise<string> {
+// initialSheetTitle：指定第一個 tab 名稱，避免留下無用的預設 "Sheet1"
+export async function createSpreadsheet(title: string, initialSheetTitle?: string): Promise<string> {
   const token = await acquireToken()
+  const body = {
+    properties: { title },
+    ...(initialSheetTitle && { sheets: [{ properties: { title: initialSheetTitle } }] }),
+  }
   const res = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ properties: { title } }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) {
     const msg = await res.text().catch(() => '')
