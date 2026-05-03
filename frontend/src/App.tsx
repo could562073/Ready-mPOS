@@ -67,7 +67,7 @@ function App() {
       }}
     >
       {/* 頁面內容，底部留空給 tab bar */}
-      <div style={{ paddingBottom: 80, paddingTop: 16 }}>
+      <div style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))', paddingTop: 16 }}>
         {tab === 'dashboard' && (
           <DashboardPage onNavigate={handleNavigate} syncing={syncing} />
         )}
