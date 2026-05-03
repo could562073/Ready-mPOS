@@ -160,22 +160,19 @@ export function DailyEntryPage({ date, onDateChange, onSync }: DailyEntryPagePro
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* 日期選擇 + 自動儲存狀態 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px' }}>
-        <div style={{ position: 'relative' }}>
-          <button
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '8px 14px', borderRadius: 999,
-              background: T.card, border: 'none',
-              boxShadow: T.shadow.card,
-              fontSize: 14, fontWeight: 700, color: T.ink,
-              fontFamily: T.font.sans, cursor: 'pointer',
-            }}
-          >
-            <Icon name="calendar" size={14} stroke={2.4} color={T.lavenderInk} />
-            <span>{formatDateLabel(date)}</span>
-            <Icon name="chevron-d" size={14} stroke={2.4} color={T.muted} />
-          </button>
-          {/* 透明 input 直接覆蓋按鈕，iOS 需要手指直接觸碰 input 才能打開原生選擇器 */}
+        {/* inline-flex 確保 div 尺寸精確貼合內容，absolute input 才能完整覆蓋整個按鈕 */}
+        <div
+          style={{
+            position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '8px 14px', borderRadius: 999,
+            background: T.card, boxShadow: T.shadow.card,
+            fontSize: 14, fontWeight: 700, color: T.ink,
+            fontFamily: T.font.sans, cursor: 'pointer',
+          }}
+        >
+          <Icon name="calendar" size={14} stroke={2.4} color={T.lavenderInk} />
+          <span>{formatDateLabel(date)}</span>
+          <Icon name="chevron-d" size={14} stroke={2.4} color={T.muted} />
           <input
             type="date"
             value={date}
