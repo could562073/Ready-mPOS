@@ -165,6 +165,28 @@ export const clearSpreadsheet = (): void => {
   localStorage.removeItem(LS_SHEET_NAME)
 }
 
+// 檢查已儲存的試算表 ID 是否仍有效（未被刪除或移至垃圾桶）
+// 若無效則自動清除，讓登入流程重新搜尋或建立
+export async function clearIfInvalidSpreadsheet(): Promise<void> {
+  const id = getSpreadsheetId()
+  if (!id) return
+  try {
+    const token = await acquireToken()
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${id}?fields=id,trashed`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    if (!res.ok) {
+      clearSpreadsheet()
+      return
+    }
+    const data = (await res.json()) as { id: string; trashed: boolean }
+    if (data.trashed) clearSpreadsheet()
+  } catch {
+    // token 取得失敗時保留 ID，讓後續流程繼續決定
+  }
+}
+
 // ── Sheets API helpers ─────────────────────────────────────
 
 async function sheetsGet<T>(path: string, token: string): Promise<T> {

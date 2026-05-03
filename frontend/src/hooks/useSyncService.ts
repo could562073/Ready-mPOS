@@ -13,6 +13,7 @@ import {
   getSpreadsheetUrl,
   setSpreadsheetId,
   syncMonthToSheets,
+  clearIfInvalidSpreadsheet,
 } from '../lib/sheets'
 
 const AUTO_SHEET_NAME = 'Ready-mPOS 記帳'
@@ -120,6 +121,9 @@ export function useSyncService() {
     try {
       const email = await googleSignIn()
       setGoogleEmail(email)
+
+      // 驗證已儲存的試算表 ID 是否仍有效（未被刪除或移至垃圾桶），無效則清除
+      await clearIfInvalidSpreadsheet()
 
       // 尚無本地試算表 ID → 搜尋 Drive 上同名檔案，找不到才新建
       // 確保同一帳號在不同裝置指向同一份試算表
