@@ -92,21 +92,17 @@ export function useSyncService() {
     }
   }, [])
 
-  // 強制從雲端還原：覆蓋所有本機記錄（含 SYNCED），用於資料遺失或手動重置
+  // 強制從雲端還原：清空本機所有資料後以雲端資料取代（完整覆蓋，含空試算表場景）
   const restoreFromSheets = useCallback(async () => {
     const sheetId = getSpreadsheetId()
     if (!sheetId || !getSignedInEmail()) return
     setRestoring(true)
     try {
       const records = await pullAllFromSheets(sheetId)
-      for (const record of records) {
-        const existing = await db.dailyRecords.where('date').equals(record.date).first()
-        if (!existing) {
-          await db.dailyRecords.add(record)
-        } else {
-          // 強制以雲端資料覆蓋（包含 PENDING 記錄）
-          await db.dailyRecords.update(existing.id!, { ...record, id: existing.id })
-        }
+      // 先清空本機，確保雲端刪除的記錄也從本機移除
+      await db.dailyRecords.clear()
+      if (records.length > 0) {
+        await db.dailyRecords.bulkAdd(records)
       }
     } catch (err) {
       console.error('[restore] failed:', err)
