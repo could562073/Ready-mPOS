@@ -151,23 +151,26 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* 月份選擇器 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 0' }}>
-        {/* inline-flex 確保 div 尺寸精確貼合內容，absolute input 才能完整覆蓋整個按鈕 */}
-        <div
-          style={{
-            position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 8,
-            padding: '8px 14px', borderRadius: 999,
-            background: T.card, boxShadow: T.shadow.card,
-            fontSize: 14, fontWeight: 700, color: T.ink, cursor: 'pointer', fontFamily: T.font.sans,
-          }}
-        >
-          <Icon name="calendar" size={14} stroke={2.4} color={T.lavenderInk} />
-          {formatMonthLabel(month)}
-          <Icon name="chevron-d" size={14} stroke={2.4} color={T.muted} />
+        {/* 外層 inline-block 尺寸貼合內容；input 以四向 0 明確覆蓋；視覺層 pointer-events:none 確保事件直達 input */}
+        <div style={{ position: 'relative', display: 'inline-block' }}>
+          <div
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '8px 14px', borderRadius: 999,
+              background: T.card, boxShadow: T.shadow.card,
+              fontSize: 14, fontWeight: 700, color: T.ink, cursor: 'pointer', fontFamily: T.font.sans,
+              pointerEvents: 'none',
+            }}
+          >
+            <Icon name="calendar" size={14} stroke={2.4} color={T.lavenderInk} />
+            {formatMonthLabel(month)}
+            <Icon name="chevron-d" size={14} stroke={2.4} color={T.muted} />
+          </div>
           <input
             type="month"
             value={month}
             onChange={e => setMonth(e.target.value)}
-            style={{ position: 'absolute', opacity: 0, top: 0, left: 0, width: '100%', height: '100%', cursor: 'pointer', zIndex: 1 }}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0, cursor: 'pointer', zIndex: 1 }}
           />
         </div>
         {/* 匯出 stub */}
