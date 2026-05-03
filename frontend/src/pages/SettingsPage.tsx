@@ -8,11 +8,14 @@ interface Props {
   googleEmail: string | null
   onSignIn: () => Promise<void>
   onSignOut: () => void
-  spreadsheetId: string
-  onSpreadsheetIdChange: (id: string) => void
+  signInError: string | null
+  isConfigured: boolean
+  creating: boolean
+  sheetName: string
+  sheetUrl: string
+  onSetCustomSheet: (id: string, name: string) => void
 }
 
-// iOS 風格 Toggle 開關
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
@@ -27,24 +30,17 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
       <div style={{
         position: 'absolute', top: 2, left: on ? 20 : 2,
         width: 22, height: 22, borderRadius: 11, background: '#fff',
-        transition: 'left 200ms',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.18)',
+        transition: 'left 200ms', boxShadow: '0 2px 4px rgba(0,0,0,0.18)',
       }} />
     </button>
   )
 }
 
-// 設定列
 function SettingRow({
   icon, color, title, subtitle, right, onClick, isLast = false,
 }: {
-  icon: string
-  color: { soft: string; ink: string }
-  title: string
-  subtitle?: string
-  right?: React.ReactNode
-  onClick?: () => void
-  isLast?: boolean
+  icon: string; color: { soft: string; ink: string }; title: string
+  subtitle?: string; right?: React.ReactNode; onClick?: () => void; isLast?: boolean
 }) {
   return (
     <div
@@ -73,28 +69,35 @@ function SettingRow({
 
 export function SettingsPage({
   syncing, onSync,
-  googleEmail, onSignIn, onSignOut,
-  spreadsheetId, onSpreadsheetIdChange,
+  googleEmail, onSignIn, onSignOut, signInError, isConfigured, creating,
+  sheetName, sheetUrl, onSetCustomSheet,
 }: Props) {
-  const [autoSync, setAutoSync]     = useState(true)
-  const [reminder, setReminder]     = useState(true)
-  const [signingIn, setSigningIn]   = useState(false)
-  const [sheetInput, setSheetInput] = useState(spreadsheetId)
-  const [sheetSaved, setSheetSaved] = useState(false)
+  const [autoSync, setAutoSync]         = useState(true)
+  const [reminder, setReminder]         = useState(true)
+  const [signingIn, setSigningIn]       = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [customId, setCustomId]         = useState('')
+  const [customName, setCustomName]     = useState('')
+  const [customSaved, setCustomSaved]   = useState(false)
 
   const handleSignIn = async () => {
     setSigningIn(true)
     try { await onSignIn() } finally { setSigningIn(false) }
   }
 
-  const handleSaveSheetId = () => {
-    onSpreadsheetIdChange(sheetInput.trim())
-    setSheetSaved(true)
-    setTimeout(() => setSheetSaved(false), 2000)
+  const handleSaveCustom = () => {
+    if (!customId.trim()) return
+    onSetCustomSheet(customId.trim(), customName.trim() || '自訂試算表')
+    setCustomSaved(true)
+    setTimeout(() => { setCustomSaved(false); setShowAdvanced(false) }, 1500)
   }
+
+  // 按鈕狀態文字
+  const connectLabel = creating ? '建立試算表中…' : signingIn ? '連結中…' : '連結 Google 帳號'
 
   return (
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
       {/* 店家身份卡 */}
       <div style={{
         padding: 18, borderRadius: T.r.xl,
@@ -102,8 +105,7 @@ export function SettingsPage({
         display: 'flex', alignItems: 'center', gap: 14,
       }}>
         <div style={{
-          width: 56, height: 56, borderRadius: 18,
-          background: '#fff', color: T.lavenderInk,
+          width: 56, height: 56, borderRadius: 18, background: '#fff', color: T.lavenderInk,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 24, fontWeight: 800, fontFamily: T.font.num,
           boxShadow: '0 4px 12px rgba(155,138,251,0.24)',
@@ -113,8 +115,7 @@ export function SettingsPage({
           <div style={{ fontSize: 12, color: T.ink2, fontWeight: 600, marginTop: 2 }}>開始記帳，告別手寫記帳本</div>
         </div>
         <button style={{
-          width: 36, height: 36, borderRadius: 12,
-          background: '#fff', border: 'none',
+          width: 36, height: 36, borderRadius: 12, background: '#fff', border: 'none',
           display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
           boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
         }}>
@@ -122,146 +123,171 @@ export function SettingsPage({
         </button>
       </div>
 
-      {/* Google Sheets 同步設定卡 */}
+      {/* Google Sheets 雲端同步 */}
       <div>
         <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, padding: '4px 4px 8px', letterSpacing: 0.4, textTransform: 'uppercase' }}>
           Google Sheets 雲端同步
         </div>
         <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
 
-          {/* 帳號連結列 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${T.hairline}` }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 11, flexShrink: 0,
-              background: T.mintSoft, color: T.mintInk,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Icon name="cloud" size={18} stroke={2.2} />
+          {/* Client ID 未設定警告 */}
+          {!isConfigured && (
+            <div style={{ padding: '10px 16px', background: T.sunSoft, borderBottom: `1px solid ${T.hairline}`, fontSize: 12, color: T.sunInk, fontWeight: 600, lineHeight: 1.5 }}>
+              ⚠️ 尚未設定 VITE_GOOGLE_CLIENT_ID，請在 frontend/.env 填入後重啟 dev server。
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>Google 帳號</div>
-              <div style={{ fontSize: 11, color: googleEmail ? T.mintInk : T.muted, fontWeight: 600, marginTop: 2 }}>
-                {googleEmail ?? '尚未連結'}
+          )}
+
+          {/* 登入錯誤 */}
+          {signInError && (
+            <div style={{ padding: '10px 16px', background: T.coralSoft, borderBottom: `1px solid ${T.hairline}`, fontSize: 12, color: T.coralInk, fontWeight: 600, lineHeight: 1.5 }}>
+              登入失敗：{signInError}
+            </div>
+          )}
+
+          {/* 未連結 → 一鍵連結卡 */}
+          {!googleEmail ? (
+            <div style={{ padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: 18,
+                background: T.mintSoft, color: T.mintInk,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Icon name="cloud" size={28} stroke={2} />
               </div>
-            </div>
-            {googleEmail ? (
-              <button
-                onClick={onSignOut}
-                style={{
-                  padding: '6px 12px', borderRadius: 999, border: 'none',
-                  background: T.coralSoft, color: T.coralInk,
-                  fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: T.font.sans,
-                }}
-              >
-                登出
-              </button>
-            ) : (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>自動備份到 Google Sheets</div>
+                <div style={{ fontSize: 12, color: T.muted, fontWeight: 600, marginTop: 4, lineHeight: 1.5 }}>
+                  連結後自動建立試算表，每次同步自動寫入，無需任何設定。
+                </div>
+              </div>
               <button
                 onClick={handleSignIn}
-                disabled={signingIn}
+                disabled={signingIn || creating || !isConfigured}
                 style={{
-                  padding: '6px 12px', borderRadius: 999, border: 'none',
-                  background: T.mintSoft, color: T.mintInk,
-                  fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: T.font.sans,
-                  opacity: signingIn ? 0.6 : 1,
+                  width: '100%', padding: '14px 0', borderRadius: T.r.md, border: 'none',
+                  background: T.ink, color: '#fff',
+                  fontSize: 15, fontWeight: 800, cursor: 'pointer', fontFamily: T.font.sans,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  opacity: (!isConfigured || signingIn || creating) ? 0.5 : 1,
+                  transition: 'opacity 150ms',
                 }}
               >
-                {signingIn ? '連結中…' : '連結帳號'}
-              </button>
-            )}
-          </div>
-
-          {/* 試算表 ID 輸入 */}
-          <div style={{ padding: '14px 16px', borderBottom: `1px solid ${T.hairline}` }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>試算表 ID</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                value={sheetInput}
-                onChange={e => setSheetInput(e.target.value)}
-                placeholder="從 Google Sheets URL 複製"
-                style={{
-                  flex: 1, padding: '8px 12px', borderRadius: T.r.sm,
-                  border: `1.5px solid ${T.hairline}`, fontSize: 12,
-                  fontFamily: T.font.sans, color: T.ink, background: T.bg,
-                  outline: 'none',
-                }}
-              />
-              <button
-                onClick={handleSaveSheetId}
-                style={{
-                  padding: '8px 14px', borderRadius: T.r.sm, border: 'none',
-                  background: sheetSaved ? T.mintSoft : T.ink,
-                  color: sheetSaved ? T.mintInk : '#fff',
-                  fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                  fontFamily: T.font.sans, transition: 'all 200ms', flexShrink: 0,
-                }}
-              >
-                {sheetSaved ? '已儲存 ✓' : '儲存'}
+                <Icon name="cloud-check" size={18} color="#fff" stroke={2.2} />
+                {connectLabel}
               </button>
             </div>
-            <div style={{ fontSize: 10, color: T.muted, marginTop: 6, lineHeight: 1.5 }}>
-              從試算表網址複製：…/spreadsheets/d/<strong>這段ID</strong>/edit
-            </div>
-          </div>
-
-          {/* 立即同步按鈕 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px' }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 11, flexShrink: 0,
-              background: T.skySoft, color: T.skyInk,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Icon name="sync" size={18} stroke={2.2} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>同步狀態</div>
-              <div style={{ fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 2 }}>
-                {syncing ? '同步中…' : googleEmail ? '資料已儲存到本機' : '請先連結 Google 帳號'}
+          ) : (
+            /* 已連結 → 狀態顯示 */
+            <>
+              {/* 帳號列 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${T.hairline}` }}>
+                <div style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: T.mintSoft, color: T.mintInk, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="users" size={18} stroke={2.2} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{googleEmail}</div>
+                  <div style={{ fontSize: 11, color: T.mintInk, fontWeight: 600, marginTop: 2 }}>已連結</div>
+                </div>
+                <button
+                  onClick={onSignOut}
+                  style={{ padding: '6px 12px', borderRadius: 999, border: 'none', background: T.coralSoft, color: T.coralInk, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: T.font.sans }}
+                >
+                  登出
+                </button>
               </div>
-            </div>
-            <button
-              onClick={onSync}
-              disabled={syncing || !googleEmail || !sheetInput}
-              style={{
-                padding: '6px 12px', borderRadius: 999,
-                background: T.bg, border: 'none',
-                fontSize: 12, fontWeight: 700, color: T.ink2, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 4, fontFamily: T.font.sans,
-                opacity: (!googleEmail || !sheetInput) ? 0.4 : 1,
-              }}
-            >
-              <Icon name="sync" size={12} stroke={2.6} />
-              立即同步
-            </button>
-          </div>
+
+              {/* 試算表列 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${T.hairline}` }}>
+                <div style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: T.mintSoft, color: T.mintInk, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="receipt" size={18} stroke={2.2} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{sheetName || '試算表'}</div>
+                  <div style={{ fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 2 }}>資料自動寫入此試算表</div>
+                </div>
+                {sheetUrl && (
+                  <a
+                    href={sheetUrl} target="_blank" rel="noopener noreferrer"
+                    style={{ padding: '6px 12px', borderRadius: 999, background: T.mintSoft, color: T.mintInk, fontSize: 12, fontWeight: 700, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+                  >
+                    開啟 <Icon name="chevron-r" size={12} color={T.mintInk} stroke={2.6} />
+                  </a>
+                )}
+              </div>
+
+              {/* 立即同步列 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${T.hairline}` }}>
+                <div style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: T.skySoft, color: T.skyInk, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="sync" size={18} stroke={2.2} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>同步狀態</div>
+                  <div style={{ fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 2 }}>{syncing ? '同步中…' : '資料已儲存到本機'}</div>
+                </div>
+                <button
+                  onClick={onSync}
+                  disabled={syncing}
+                  style={{ padding: '6px 12px', borderRadius: 999, background: T.bg, border: 'none', fontSize: 12, fontWeight: 700, color: T.ink2, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontFamily: T.font.sans, opacity: syncing ? 0.4 : 1 }}
+                >
+                  <Icon name="sync" size={12} stroke={2.6} />
+                  立即同步
+                </button>
+              </div>
+
+              {/* 進階：使用現有試算表 */}
+              <div>
+                <button
+                  onClick={() => setShowAdvanced(v => !v)}
+                  style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', fontFamily: T.font.sans }}
+                >
+                  <span style={{ fontSize: 12, color: T.muted, fontWeight: 700 }}>進階：使用現有試算表</span>
+                  <Icon name={showAdvanced ? 'chevron-d' : 'chevron-r'} size={14} color={T.muted} stroke={2.4} />
+                </button>
+                {showAdvanced && (
+                  <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <input
+                      value={customId}
+                      onChange={e => setCustomId(e.target.value)}
+                      placeholder="試算表 ID（從網址複製）"
+                      style={{ padding: '8px 12px', borderRadius: T.r.sm, border: `1.5px solid ${T.hairline}`, fontSize: 12, fontFamily: T.font.sans, color: T.ink, background: T.bg, outline: 'none' }}
+                    />
+                    <input
+                      value={customName}
+                      onChange={e => setCustomName(e.target.value)}
+                      placeholder="顯示名稱（選填）"
+                      style={{ padding: '8px 12px', borderRadius: T.r.sm, border: `1.5px solid ${T.hairline}`, fontSize: 12, fontFamily: T.font.sans, color: T.ink, background: T.bg, outline: 'none' }}
+                    />
+                    <button
+                      onClick={handleSaveCustom}
+                      disabled={!customId.trim()}
+                      style={{ padding: '10px 0', borderRadius: T.r.sm, border: 'none', background: customSaved ? T.mintSoft : T.ink, color: customSaved ? T.mintInk : '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: T.font.sans, transition: 'all 200ms', opacity: !customId.trim() ? 0.4 : 1 }}
+                    >
+                      {customSaved ? '已套用 ✓' : '套用'}
+                    </button>
+                    <div style={{ fontSize: 10, color: T.muted, lineHeight: 1.5 }}>
+                      從試算表網址複製：…/spreadsheets/d/<strong>這段ID</strong>/edit
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       {/* 應用程式設定 */}
       <div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, padding: '4px 4px 8px', letterSpacing: 0.4, textTransform: 'uppercase' }}>
-          應用程式
-        </div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, padding: '4px 4px 8px', letterSpacing: 0.4, textTransform: 'uppercase' }}>應用程式</div>
         <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
-          <SettingRow
-            icon="cloud" color={{ soft: T.skySoft, ink: T.skyInk }}
-            title="自動同步" subtitle="連網後自動上傳未同步資料"
-            right={<Toggle on={autoSync} onChange={setAutoSync} />}
-          />
-          <SettingRow
-            icon="sparkle" color={{ soft: T.sunSoft, ink: T.sunInk }}
-            title="打烊提醒" subtitle="每晚 22:30 提醒記帳"
-            right={<Toggle on={reminder} onChange={setReminder} />}
-          />
-          <SettingRow icon="package" color={{ soft: T.uberSoft, ink: T.uberInk }} title="外送平台費率" subtitle="Uber 30% · foodpanda 35%" isLast />
+          <SettingRow icon="cloud"    color={{ soft: T.skySoft,  ink: T.skyInk  }} title="自動同步"  subtitle="連網後自動上傳未同步資料"   right={<Toggle on={autoSync} onChange={setAutoSync} />} />
+          <SettingRow icon="sparkle"  color={{ soft: T.sunSoft,  ink: T.sunInk  }} title="打烊提醒"  subtitle="每晚 22:30 提醒記帳"        right={<Toggle on={reminder} onChange={setReminder} />} />
+          <SettingRow icon="package"  color={{ soft: T.uberSoft, ink: T.uberInk }} title="外送平台費率" subtitle="Uber 30% · foodpanda 35%" isLast />
         </div>
       </div>
 
       {/* 類別管理 */}
       <div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, padding: '4px 4px 8px', letterSpacing: 0.4, textTransform: 'uppercase' }}>
-          類別管理
-        </div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, padding: '4px 4px 8px', letterSpacing: 0.4, textTransform: 'uppercase' }}>類別管理</div>
         <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
           <SettingRow icon="arrow-up"   color={{ soft: T.mintSoft,  ink: T.mintInk  }} title="收入類別" subtitle="現金、刷卡、Uber Eats、foodpanda" />
           <SettingRow icon="arrow-down" color={{ soft: T.coralSoft, ink: T.coralInk }} title="支出類別" subtitle="食材、薪資、雜支" isLast />

@@ -1,11 +1,15 @@
 import type { DailyRecord } from '../types'
 
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
-const SCOPES = 'https://www.googleapis.com/auth/spreadsheets'
+const CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) || ''
+
+// 讓呼叫方可以檢查是否已設定 Client ID
+export const isGoogleConfigured = (): boolean => CLIENT_ID.length > 0
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email'
 
 // LS key for persisting spreadsheet preference
-const LS_EMAIL = 'gsheets_email'
+const LS_EMAIL    = 'gsheets_email'
 const LS_SHEET_ID = 'gsheets_spreadsheet_id'
+const LS_SHEET_NAME = 'gsheets_spreadsheet_name'
 
 interface TokenInfo {
   access_token: string
@@ -78,11 +82,42 @@ export function signOut(): void {
     tokenInfo = null
   }
   localStorage.removeItem(LS_EMAIL)
+  clearSpreadsheet()
 }
 
-export const getSignedInEmail = (): string | null => localStorage.getItem(LS_EMAIL)
-export const getSpreadsheetId = (): string => localStorage.getItem(LS_SHEET_ID) ?? ''
-export const setSpreadsheetId = (id: string): void => localStorage.setItem(LS_SHEET_ID, id)
+// 在使用者的 Google Drive 建立新試算表，回傳其 ID
+export async function createSpreadsheet(title: string): Promise<string> {
+  const token = await acquireToken()
+  const res = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ properties: { title } }),
+  })
+  if (!res.ok) {
+    const msg = await res.text().catch(() => '')
+    throw new Error(`建立試算表失敗：${res.status} ${msg}`)
+  }
+  const data = (await res.json()) as { spreadsheetId: string }
+  return data.spreadsheetId
+}
+
+export const getSignedInEmail   = (): string | null => localStorage.getItem(LS_EMAIL)
+export const getSpreadsheetId   = (): string      => localStorage.getItem(LS_SHEET_ID) ?? ''
+export const getSpreadsheetName = (): string      => localStorage.getItem(LS_SHEET_NAME) ?? ''
+export const getSpreadsheetUrl  = (): string => {
+  const id = getSpreadsheetId()
+  return id ? `https://docs.google.com/spreadsheets/d/${id}/edit` : ''
+}
+
+export const setSpreadsheetId = (id: string, name?: string): void => {
+  localStorage.setItem(LS_SHEET_ID, id)
+  if (name !== undefined) localStorage.setItem(LS_SHEET_NAME, name)
+}
+
+export const clearSpreadsheet = (): void => {
+  localStorage.removeItem(LS_SHEET_ID)
+  localStorage.removeItem(LS_SHEET_NAME)
+}
 
 // ── Sheets API helpers ─────────────────────────────────────
 

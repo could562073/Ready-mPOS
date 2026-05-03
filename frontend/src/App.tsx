@@ -30,7 +30,11 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(
     () => !localStorage.getItem('mpos_onboarded')
   )
-  const { syncing, syncAll, googleEmail, signIn, signOut, spreadsheetId, setSpreadsheetId } = useSyncService()
+  const {
+    syncing, syncAll,
+    googleEmail, signIn, signOut, signInError, creating,
+    isConfigured, sheetName, sheetUrl, setCustomSheet,
+  } = useSyncService()
 
   // 月結報表點擊某天 → 切換到每日記帳並帶入選定日期
   const handleSelectDate = (date: string) => {
@@ -79,8 +83,12 @@ function App() {
             googleEmail={googleEmail}
             onSignIn={signIn}
             onSignOut={signOut}
-            spreadsheetId={spreadsheetId}
-            onSpreadsheetIdChange={setSpreadsheetId}
+            signInError={signInError}
+            isConfigured={isConfigured}
+            creating={creating}
+            sheetName={sheetName}
+            sheetUrl={sheetUrl}
+            onSetCustomSheet={setCustomSheet}
           />
         )}
       </div>
