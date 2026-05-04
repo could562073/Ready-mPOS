@@ -35,7 +35,7 @@ function App() {
     googleEmail, signIn, signOut, signInError, creating,
     restoring, restoreFromSheets,
     clearLocalData,
-    isConfigured, sheetName, sheetUrl, setCustomSheet,
+    isConfigured, setCustomSheet,
   } = useSyncService()
 
   // 月結報表點擊某天 → 切換到每日記帳並帶入選定日期
@@ -73,7 +73,7 @@ function App() {
           <DashboardPage onNavigate={handleNavigate} syncing={syncing} />
         )}
         {tab === 'daily' && (
-          <DailyEntryPage date={dailyDate} onDateChange={setDailyDate} onSync={syncAll} />
+          <DailyEntryPage date={dailyDate} onDateChange={setDailyDate} onSync={syncAll} syncing={syncing} />
         )}
         {tab === 'monthly' && (
           <MonthlyReportPage onSelectDate={handleSelectDate} />
@@ -91,7 +91,6 @@ function App() {
             restoring={restoring}
             onRestore={restoreFromSheets}
             onClearLocal={clearLocalData}
-            sheetName={sheetName}
             onSetCustomSheet={setCustomSheet}
           />
         )}

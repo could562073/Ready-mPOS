@@ -14,7 +14,6 @@ interface Props {
   restoring: boolean
   onRestore: () => void
   onClearLocal: () => Promise<void>
-  sheetName: string
   onSetCustomSheet: (id: string, name: string) => void
 }
 
@@ -22,7 +21,7 @@ export function SettingsPage({
   syncing, onSync,
   googleEmail, onSignIn, onSignOut, signInError, isConfigured, creating,
   restoring, onRestore, onClearLocal,
-  sheetName, onSetCustomSheet,
+  onSetCustomSheet,
 }: Props) {
   const [signingIn,    setSigningIn]    = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
