@@ -116,8 +116,12 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
   const dateInputRef = useRef<HTMLInputElement>(null)
 
   // 載入既有紀錄填入表單
+  // deps 包含 record：useLiveQuery 在切換日期時可能短暫保留舊資料（不立刻回傳 undefined），
+  // 若只依賴 [date, loading] 會在 loading 未改變時用舊日期資料填入新日期表單
   useEffect(() => {
     if (loading) return
+    // 守衛：record 仍是上一個日期的 stale 資料，等真正的 query 解析完再填入
+    if (record && record.date !== date) return
     if (record) {
       setCashIncome(record.cashIncome)
       setCardIncome(record.cardIncome)
@@ -132,7 +136,7 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
       setFoodCost(0); setStaffSalary(0); setMiscExpense(0); setNotes('')
     }
     setSaved(false)
-  }, [date, loading])
+  }, [date, record, loading])
 
   const totalIncome  = cashIncome + cardIncome + uberEatsIncome + pandaIncome
   const totalExpense = foodCost + staffSalary + miscExpense
