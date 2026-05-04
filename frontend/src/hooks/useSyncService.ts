@@ -9,8 +9,6 @@ import {
   pullAllFromSheets,
   getSignedInEmail,
   getSpreadsheetId,
-  getSpreadsheetName,
-  getSpreadsheetUrl,
   setSpreadsheetId,
   syncMonthToSheets,
   clearIfInvalidSpreadsheet,
@@ -19,14 +17,11 @@ import {
 const AUTO_SHEET_NAME = 'Ready-mPOS 記帳'
 
 export function useSyncService() {
-  const [syncing, setSyncing]           = useState(false)
-  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null)
-  const [googleEmail, setGoogleEmail]   = useState<string | null>(() => getSignedInEmail())
-  const [sheetName, setSheetName]       = useState<string>(() => getSpreadsheetName())
-  const [sheetUrl, setSheetUrl]         = useState<string>(() => getSpreadsheetUrl())
-  const [signInError, setSignInError]   = useState<string | null>(null)
-  const [creating, setCreating]         = useState(false)
-  const [restoring, setRestoring]       = useState(false)
+  const [syncing, setSyncing]         = useState(false)
+  const [googleEmail, setGoogleEmail] = useState<string | null>(() => getSignedInEmail())
+  const [signInError, setSignInError] = useState<string | null>(null)
+  const [creating, setCreating]       = useState(false)
+  const [restoring, setRestoring]     = useState(false)
   const lockRef = useRef(false)
 
   // GIS script が非同期で読み込まれるため、ロード完了後に初期化
@@ -83,7 +78,7 @@ export function useSyncService() {
         )
       }
 
-      setLastSyncedAt(new Date())
+      // sync completed
     } catch (err) {
       console.error('[sync] failed:', err)
     } finally {
@@ -136,8 +131,6 @@ export function useSyncService() {
         const currentMonth = new Date().toISOString().slice(0, 7) // 'YYYY-MM'
         const id = await getOrCreateSpreadsheet(AUTO_SHEET_NAME, currentMonth)
         setSpreadsheetId(id, AUTO_SHEET_NAME)
-        setSheetName(AUTO_SHEET_NAME)
-        setSheetUrl(getSpreadsheetUrl())
         setCreating(false)
       }
 
@@ -149,19 +142,15 @@ export function useSyncService() {
       setSignInError(msg)
       setCreating(false)
     }
-  }, [syncAll, restoreFromSheets])
+  }, [syncAll])
 
   const signOut = useCallback(() => {
     googleSignOut()
     setGoogleEmail(null)
-    setSheetName('')
-    setSheetUrl('')
   }, [])
 
   const setCustomSheet = useCallback((id: string, name: string) => {
     setSpreadsheetId(id, name)
-    setSheetName(name)
-    setSheetUrl(getSpreadsheetUrl())
     syncAll()
   }, [syncAll])
 
@@ -173,7 +162,6 @@ export function useSyncService() {
 
   return {
     syncing,
-    lastSyncedAt,
     syncAll,
     googleEmail,
     signIn,
@@ -184,8 +172,6 @@ export function useSyncService() {
     restoreFromSheets,
     clearLocalData,
     isConfigured: isGoogleConfigured(),
-    sheetName,
-    sheetUrl,
     setCustomSheet,
   }
 }

@@ -43,6 +43,7 @@ export function Icon({ name, size = 20, color = 'currentColor', stroke = 2, clas
     case 'wallet':      return <svg {...props}><path d="M21 12V7H5a2 2 0 010-4h14v4"/><path d="M3 5v14a2 2 0 002 2h16v-5"/><path d="M18 12a2 2 0 100 4h4v-4h-4z"/></svg>;
     case 'sync':        return <svg {...props}><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>;
     case 'x':           return <svg {...props}><path d="M18 6L6 18M6 6l12 12"/></svg>;
+    case 'circle-dot':  return <svg {...props}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>;
     default:            return null;
   }
 }

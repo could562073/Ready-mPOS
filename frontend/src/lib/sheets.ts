@@ -126,34 +126,8 @@ export async function getOrCreateSpreadsheet(title: string, initialSheetTitle?: 
   return data.spreadsheetId
 }
 
-// 在使用者的 Google Drive 建立新試算表，回傳其 ID
-// initialSheetTitle：指定第一個 tab 名稱，避免留下無用的預設 "Sheet1"
-export async function createSpreadsheet(title: string, initialSheetTitle?: string): Promise<string> {
-  const token = await acquireToken()
-  const body = {
-    properties: { title },
-    ...(initialSheetTitle && { sheets: [{ properties: { title: initialSheetTitle } }] }),
-  }
-  const res = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) {
-    const msg = await res.text().catch(() => '')
-    throw new Error(`建立試算表失敗：${res.status} ${msg}`)
-  }
-  const data = (await res.json()) as { spreadsheetId: string }
-  return data.spreadsheetId
-}
-
-export const getSignedInEmail   = (): string | null => localStorage.getItem(LS_EMAIL)
-export const getSpreadsheetId   = (): string      => localStorage.getItem(LS_SHEET_ID) ?? ''
-export const getSpreadsheetName = (): string      => localStorage.getItem(LS_SHEET_NAME) ?? ''
-export const getSpreadsheetUrl  = (): string => {
-  const id = getSpreadsheetId()
-  return id ? `https://docs.google.com/spreadsheets/d/${id}/edit` : ''
-}
+export const getSignedInEmail = (): string | null => localStorage.getItem(LS_EMAIL)
+export const getSpreadsheetId = (): string => localStorage.getItem(LS_SHEET_ID) ?? ''
 
 export const setSpreadsheetId = (id: string, name?: string): void => {
   localStorage.setItem(LS_SHEET_ID, id)
