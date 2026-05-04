@@ -9,6 +9,7 @@ interface DailyEntryPageProps {
   date: string
   onDateChange: (date: string) => void
   onSync?: () => void
+  syncing?: boolean
 }
 
 // 表單欄位設定
@@ -99,7 +100,7 @@ function formatDateLabel(dateStr: string) {
   return `${d.getMonth() + 1}月${d.getDate()}日 · ${DOW}`
 }
 
-export function DailyEntryPage({ date, onDateChange, onSync }: DailyEntryPageProps) {
+export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEntryPageProps) {
   const { record, loading, save } = useDailyRecord(date)
 
   const [cashIncome,     setCashIncome]     = useState(0)
@@ -189,16 +190,21 @@ export function DailyEntryPage({ date, onDateChange, onSync }: DailyEntryPagePro
             style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0, cursor: 'pointer' }}
           />
         </div>
+        {/* 同步狀態徽章：同步中 / 已同步 / 待同步 */}
         <div
           style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '6px 10px', borderRadius: 999,
-            background: T.mintSoft, color: T.mintInk,
             fontSize: 11, fontWeight: 700,
+            background: syncing ? T.skySoft : record?.syncStatus === 'SYNCED' ? T.mintSoft : '#FFF8E1',
+            color:      syncing ? T.skyInk  : record?.syncStatus === 'SYNCED' ? T.mintInk  : '#B45309',
           }}
         >
-          <span style={{ width: 6, height: 6, borderRadius: 3, background: T.mint, display: 'inline-block' }} />
-          {record?.syncStatus === 'SYNCED' ? '已同步' : '自動儲存'}
+          <span style={{
+            width: 6, height: 6, borderRadius: 3, display: 'inline-block',
+            background: syncing ? T.sky : record?.syncStatus === 'SYNCED' ? T.mint : '#F59E0B',
+          }} />
+          {syncing ? '同步中…' : record?.syncStatus === 'SYNCED' ? '已同步' : '待同步'}
         </div>
       </div>
 
