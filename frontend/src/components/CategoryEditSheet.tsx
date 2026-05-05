@@ -113,7 +113,8 @@ export function EditSheet({ draft, isNew, onSave, onDelete, onClose }: {
           </button>
         </div>
 
-        <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 20, maxHeight: '65vh', overflowY: 'auto' }}>
+        {/* 可捲動內容區 — 不含操作按鈕 */}
+        <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 20, maxHeight: '55vh', overflowY: 'auto', paddingBottom: 8 }}>
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8 }}>名稱</div>
             <input
@@ -166,29 +167,31 @@ export function EditSheet({ draft, isNew, onSave, onDelete, onClose }: {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 10, paddingBottom: 8 }}>
-            {!isNew && (
-              <button
-                onClick={onDelete}
-                style={{
-                  flex: 1, padding: '14px 0', borderRadius: T.r.md, border: 'none',
-                  background: T.coralSoft, color: T.coralInk,
-                  fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: T.font.sans,
-                }}
-              >刪除</button>
-            )}
+        </div>
+
+        {/* 固定底部按鈕區 — 永遠可見，不受捲動影響 */}
+        <div style={{ padding: '12px 20px 0', borderTop: `1px solid ${T.hairline}`, display: 'flex', gap: 10 }}>
+          {!isNew && (
             <button
-              onClick={() => { if (local.name.trim()) onSave(local) }}
-              disabled={!local.name.trim()}
+              onClick={onDelete}
               style={{
-                flex: 2, padding: '14px 0', borderRadius: T.r.md, border: 'none',
-                background: local.name.trim() ? T.ink : '#D8D9E0',
-                color: '#fff',
-                fontSize: 14, fontWeight: 800, cursor: local.name.trim() ? 'pointer' : 'default',
-                fontFamily: T.font.sans, transition: 'background 150ms',
+                flex: 1, padding: '14px 0', borderRadius: T.r.md, border: 'none',
+                background: T.coralSoft, color: T.coralInk,
+                fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: T.font.sans,
               }}
-            >儲存</button>
-          </div>
+            >刪除</button>
+          )}
+          <button
+            onClick={() => { if (local.name.trim()) onSave(local) }}
+            disabled={!local.name.trim()}
+            style={{
+              flex: 2, padding: '14px 0', borderRadius: T.r.md, border: 'none',
+              background: local.name.trim() ? T.ink : '#D8D9E0',
+              color: '#fff',
+              fontSize: 14, fontWeight: 800, cursor: local.name.trim() ? 'pointer' : 'default',
+              fontFamily: T.font.sans, transition: 'background 150ms',
+            }}
+          >儲存</button>
         </div>
       </div>
     </>
