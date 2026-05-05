@@ -238,6 +238,52 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
         </div>
       )}
 
+      {/* 今日支出明細 */}
+      {expenseCategories.length > 0 && (
+        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 22, height: 22, borderRadius: 7, background: T.coral, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="arrow-down" size={13} stroke={2.8} />
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>今日支出明細</span>
+            </div>
+            <span style={{ fontSize: 16, fontWeight: 800, color: T.coralInk, fontFamily: T.font.num, letterSpacing: -0.3 }}>{fmt(todayExpense)}</span>
+          </div>
+          <div style={{ borderTop: `1px solid ${T.hairline}` }}>
+            {expenseCategories.map((cat, i) => {
+              const color = colorMap[cat.color] ?? colorMap['coral']
+              const value = todayRecord?.expenses[cat.id] ?? 0
+              const pct   = todayExpense > 0 ? Math.round((value / todayExpense) * 100) : 0
+              const isLast = i === expenseCategories.length - 1
+              return (
+                <div key={cat.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '12px 14px',
+                  borderBottom: isLast ? 'none' : `1px solid ${T.hairline}`,
+                }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 10, flexShrink: 0, background: color.soft, color: color.ink, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name={cat.icon} size={16} stroke={2.4} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cat.name}</span>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: T.font.num, letterSpacing: -0.2 }}>{fmt(value)}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ flex: 1, height: 4, borderRadius: 2, background: T.hairline, overflow: 'hidden' }}>
+                        <div style={{ width: `${Math.max(pct, value > 0 ? 2 : 0)}%`, height: '100%', background: color.bg, borderRadius: 2, transition: 'width 400ms ease' }} />
+                      </div>
+                      <span style={{ fontSize: 10, color: T.muted, fontWeight: 700, fontFamily: T.font.num, minWidth: 26, textAlign: 'right' }}>{pct}%</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 近 7 天收入小圖 */}
       <div style={{ padding: 18, borderRadius: T.r.lg, background: T.card, boxShadow: T.shadow.card }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
@@ -288,52 +334,6 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
               {feeCategories.map(c => c.name).join('、')} 合計佔今日收入 {Math.round(feeRatio * 100)}%，
               已扣手續費 {fmt(totalFees)}，建議多推內用方案提升毛利。
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* 今日支出明細 */}
-      {expenseCategories.length > 0 && (
-        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 22, height: 22, borderRadius: 7, background: T.coral, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="arrow-down" size={13} stroke={2.8} />
-              </div>
-              <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>今日支出明細</span>
-            </div>
-            <span style={{ fontSize: 16, fontWeight: 800, color: T.coralInk, fontFamily: T.font.num, letterSpacing: -0.3 }}>{fmt(todayExpense)}</span>
-          </div>
-          <div style={{ borderTop: `1px solid ${T.hairline}` }}>
-            {expenseCategories.map((cat, i) => {
-              const color = colorMap[cat.color] ?? colorMap['coral']
-              const value = todayRecord?.expenses[cat.id] ?? 0
-              const pct   = todayExpense > 0 ? Math.round((value / todayExpense) * 100) : 0
-              const isLast = i === expenseCategories.length - 1
-              return (
-                <div key={cat.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '12px 14px',
-                  borderBottom: isLast ? 'none' : `1px solid ${T.hairline}`,
-                }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 10, flexShrink: 0, background: color.soft, color: color.ink, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon name={cat.icon} size={16} stroke={2.4} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cat.name}</span>
-                      <span style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: T.font.num, letterSpacing: -0.2 }}>{fmt(value)}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ flex: 1, height: 4, borderRadius: 2, background: T.hairline, overflow: 'hidden' }}>
-                        <div style={{ width: `${Math.max(pct, value > 0 ? 2 : 0)}%`, height: '100%', background: color.bg, borderRadius: 2, transition: 'width 400ms ease' }} />
-                      </div>
-                      <span style={{ fontSize: 10, color: T.muted, fontWeight: 700, fontFamily: T.font.num, minWidth: 26, textAlign: 'right' }}>{pct}%</span>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
           </div>
         </div>
       )}
