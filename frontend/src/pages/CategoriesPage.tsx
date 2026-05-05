@@ -292,11 +292,11 @@ export function CategoriesPage({ onBack, googleEmail, onSyncCategories }: Props)
   const [categories, setCategories] = useState<Category[]>(() => getCategories())
   const [editTarget, setEditTarget] = useState<{ cat: DraftCategory; isNew: boolean } | null>(null)
 
-  // 儲存並同步
+  // 立即存入 localStorage；Sheets 同步延至返回時統一執行一次
+  // 避免每次操作都呼叫 acquireToken，與 syncAll 並行導致 GIS 重複彈窗
   const persist = (updated: Category[]) => {
     setCategories(updated)
     saveCategories(updated)
-    onSyncCategories(updated)
   }
 
   const handleToggle = (id: string) => {
@@ -336,7 +336,7 @@ export function CategoriesPage({ onBack, googleEmail, onSyncCategories }: Props)
         {/* 頂部標題列 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 0' }}>
           <button
-            onClick={onBack}
+            onClick={() => { onSyncCategories(categories); onBack() }}
             style={{
               width: 36, height: 36, borderRadius: 12, border: 'none',
               background: T.card, color: T.ink, cursor: 'pointer',
