@@ -1,4 +1,5 @@
 import type { Category } from '../types'
+import type { DailyRecord } from '../types'
 
 const LS_KEY = 'mpos_categories'
 
@@ -44,6 +45,13 @@ export function getEnabledByType(type: 'income' | 'expense'): Category[] {
 // 取所有歷史出現過的類別（含停用），用於報表顯示
 export function getAllByType(type: 'income' | 'expense'): Category[] {
   return getCategories().filter(c => c.type === type)
+}
+
+// 計算單筆記錄的平台手續費（所有 fee > 0 的收入類別）
+export function calcFees(record: DailyRecord, categories: Category[]): number {
+  return categories
+    .filter(c => c.type === 'income' && c.fee && c.fee > 0)
+    .reduce((s, c) => s + (record.incomes[c.id] ?? 0) * c.fee!, 0)
 }
 
 // 可選圖示清單

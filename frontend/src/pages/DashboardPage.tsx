@@ -3,7 +3,7 @@ import { fmt } from '../lib/fmt'
 import { Icon } from '../components/Icon'
 import { useDailyRecord } from '../hooks/useDailyRecord'
 import { useMonthlyRecords } from '../hooks/useMonthlyRecords'
-import { getEnabledByType } from '../lib/categories'
+import { getEnabledByType, getCategories, calcFees } from '../lib/categories'
 import type { DailyRecord } from '../types'
 
 type Tab = 'dashboard' | 'daily' | 'monthly' | 'settings'
@@ -75,10 +75,12 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
     : 0
   const todayNetAfterFees = todayNet - totalFees
 
-  // 本月加總
-  const mtdIncome  = monthRecords.reduce((s, r) => s + dayIncome(r),  0)
-  const mtdExpense = monthRecords.reduce((s, r) => s + dayExpense(r), 0)
-  const mtdNet     = mtdIncome - mtdExpense
+  // 本月加總（含手續費扣除）
+  const allCategories = getCategories()
+  const mtdIncome     = monthRecords.reduce((s, r) => s + dayIncome(r),  0)
+  const mtdExpense    = monthRecords.reduce((s, r) => s + dayExpense(r), 0)
+  const mtdFees       = monthRecords.reduce((s, r) => s + calcFees(r, allCategories), 0)
+  const mtdNet        = mtdIncome - mtdExpense - mtdFees
 
   // 今日成本率（總支出 / 總收入）
   const costPct = todayIncome > 0 ? Math.round((todayExpense / todayIncome) * 100) : 0

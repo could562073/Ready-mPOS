@@ -340,7 +340,7 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
             {saved ? '已儲存 ✓' : record ? '更新今日帳目' : '儲存今日帳目'}
           </button>
 
-          {/* 當日淨額 summary 深色卡 */}
+          {/* 當日淨額 summary 深色卡（已扣平台手續費） */}
           <div
             style={{
               background: T.ink, color: '#fff',
@@ -353,9 +353,9 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
               <span style={{ fontSize: 13, fontWeight: 700, opacity: 0.7 }}>當日淨額</span>
               <span style={{
                 fontSize: 30, fontWeight: 800, fontFamily: T.font.num, letterSpacing: -0.6,
-                color: net >= 0 ? '#4FE39D' : '#FF8E8E',
+                color: netAfterFees >= 0 ? '#4FE39D' : '#FF8E8E',
               }}>
-                {fmt(net, { plus: true, sign: true })}
+                {fmt(netAfterFees, { plus: true, sign: true })}
               </span>
             </div>
             {fees > 0 && (
@@ -363,15 +363,15 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
                 <div style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                   <div>
-                    <div style={{ opacity: 0.55, fontWeight: 600, fontSize: 11 }}>外送平台分潤</div>
+                    <div style={{ opacity: 0.55, fontWeight: 600, fontSize: 11 }}>收入毛額</div>
                     <div style={{ fontFamily: T.font.num, fontWeight: 700, marginTop: 2 }}>
-                      -{fmt(fees)}
+                      {fmt(net, { plus: true, sign: true })}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ opacity: 0.55, fontWeight: 600, fontSize: 11 }}>實收淨額</div>
-                    <div style={{ fontFamily: T.font.num, fontWeight: 700, marginTop: 2, color: '#4FE39D' }}>
-                      {fmt(netAfterFees, { plus: true, sign: true })}
+                    <div style={{ opacity: 0.55, fontWeight: 600, fontSize: 11 }}>外送平台分潤</div>
+                    <div style={{ fontFamily: T.font.num, fontWeight: 700, marginTop: 2, color: '#FF8E8E' }}>
+                      -{fmt(fees)}
                     </div>
                   </div>
                 </div>

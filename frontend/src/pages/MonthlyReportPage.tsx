@@ -3,7 +3,7 @@ import { T, colorMap } from '../lib/tokens'
 import { fmt } from '../lib/fmt'
 import { Icon } from '../components/Icon'
 import { useMonthlyRecords } from '../hooks/useMonthlyRecords'
-import { getCategories } from '../lib/categories'
+import { getCategories, calcFees } from '../lib/categories'
 import type { DailyRecord } from '../types'
 
 // 加總 incomes / expenses Record 的所有值
@@ -181,10 +181,12 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
   const monthInputRef = useRef<HTMLInputElement>(null)
   const { records, loading } = useMonthlyRecords(month)
 
-  const totalIncome  = records.reduce((s, r) => s + dayIncome(r),  0)
-  const totalExpense = records.reduce((s, r) => s + dayExpense(r), 0)
-  const net          = totalIncome - totalExpense
-  const avgDaily     = records.length > 0 ? Math.round(net / records.length) : 0
+  const allCategories = getCategories()
+  const totalIncome   = records.reduce((s, r) => s + dayIncome(r),  0)
+  const totalExpense  = records.reduce((s, r) => s + dayExpense(r), 0)
+  const totalFees     = records.reduce((s, r) => s + calcFees(r, allCategories), 0)
+  const net           = totalIncome - totalExpense - totalFees
+  const avgDaily      = records.length > 0 ? Math.round(net / records.length) : 0
 
   return (
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -312,7 +314,7 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
               {[...records].reverse().map(r => {
                 const inc = dayIncome(r)
                 const exp = dayExpense(r)
-                const rowNet = inc - exp
+                const rowNet = inc - exp - calcFees(r, allCategories)
                 const day = parseInt(r.date.slice(8))
                 return (
                   <button
