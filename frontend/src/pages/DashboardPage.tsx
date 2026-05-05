@@ -19,9 +19,13 @@ function toMonthString(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-// 加總 incomes / expenses Record 的所有值
-function dayIncome(r: DailyRecord)  { return Object.values(r.incomes  ?? {}).reduce((s, v) => s + v, 0) }
-function dayExpense(r: DailyRecord) { return Object.values(r.expenses ?? {}).reduce((s, v) => s + v, 0) }
+// 加總 incomes / expenses — 只計已知類別 ID，避免 Sheets 同步帶入的陌生欄位虛增金額
+function dayIncome(r: DailyRecord, ids: Set<string>)  {
+  return [...ids].reduce((s, id) => s + (r.incomes?.[id]  ?? 0), 0)
+}
+function dayExpense(r: DailyRecord, ids: Set<string>) {
+  return [...ids].reduce((s, id) => s + (r.expenses?.[id] ?? 0), 0)
+}
 
 // 7 天小柱狀圖
 function MiniBarChart({ bars }: { bars: { value: number; isToday: boolean }[] }) {
@@ -63,9 +67,14 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
   const incomeCategories  = getEnabledByType('income')
   const expenseCategories = getEnabledByType('expense')
 
+  // 建立已知類別 ID 集合（含停用），防止陌生欄位污染加總
+  const allCategories   = getCategories()
+  const knownIncomeIds  = new Set(allCategories.filter(c => c.type === 'income').map(c => c.id))
+  const knownExpenseIds = new Set(allCategories.filter(c => c.type === 'expense').map(c => c.id))
+
   // 今日加總
-  const todayIncome  = todayRecord ? dayIncome(todayRecord)  : 0
-  const todayExpense = todayRecord ? dayExpense(todayRecord) : 0
+  const todayIncome  = todayRecord ? dayIncome(todayRecord, knownIncomeIds)   : 0
+  const todayExpense = todayRecord ? dayExpense(todayRecord, knownExpenseIds) : 0
   const todayNet     = todayIncome - todayExpense
 
   // 外送平台手續費：所有 fee > 0 的收入類別
@@ -76,11 +85,10 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
   const todayNetAfterFees = todayNet - totalFees
 
   // 本月加總（含手續費扣除）
-  const allCategories = getCategories()
-  const mtdIncome     = monthRecords.reduce((s, r) => s + dayIncome(r),  0)
-  const mtdExpense    = monthRecords.reduce((s, r) => s + dayExpense(r), 0)
-  const mtdFees       = monthRecords.reduce((s, r) => s + calcFees(r, allCategories), 0)
-  const mtdNet        = mtdIncome - mtdExpense - mtdFees
+  const mtdIncome  = monthRecords.reduce((s, r) => s + dayIncome(r, knownIncomeIds),   0)
+  const mtdExpense = monthRecords.reduce((s, r) => s + dayExpense(r, knownExpenseIds), 0)
+  const mtdFees    = monthRecords.reduce((s, r) => s + calcFees(r, allCategories), 0)
+  const mtdNet     = mtdIncome - mtdExpense - mtdFees
 
   // 今日成本率（總支出 / 總收入）
   const costPct = todayIncome > 0 ? Math.round((todayExpense / todayIncome) * 100) : 0
@@ -91,7 +99,7 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
     d.setDate(today.getDate() - (6 - i))
     const ds = toLocalDateString(d)
     const rec = monthRecords.find(r => r.date === ds)
-    return { value: rec ? dayIncome(rec) : 0, isToday: ds === todayStr, day: d.getDate() }
+    return { value: rec ? dayIncome(rec, knownIncomeIds) : 0, isToday: ds === todayStr, day: d.getDate() }
   })
   const week7Income = last7.reduce((s, b) => s + b.value, 0)
 
