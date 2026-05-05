@@ -159,14 +159,19 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
         </div>
       </div>
 
-      {/* 今日淨額 Hero 卡 */}
+      {/* 今日淨額 Hero 卡 — 負值時呈現紅色 */}
       <div
         style={{
           position: 'relative', overflow: 'hidden',
           padding: 20, borderRadius: T.r.xl,
-          background: `linear-gradient(135deg, ${T.mint} 0%, #14B86E 100%)`,
+          background: todayNetAfterFees < 0
+            ? `linear-gradient(135deg, ${T.coral} 0%, #D63E3E 100%)`
+            : `linear-gradient(135deg, ${T.mint} 0%, #14B86E 100%)`,
           color: '#fff',
-          boxShadow: '0 12px 32px rgba(16,199,126,0.32)',
+          boxShadow: todayNetAfterFees < 0
+            ? '0 12px 32px rgba(255,107,107,0.32)'
+            : '0 12px 32px rgba(16,199,126,0.32)',
+          transition: 'background 400ms ease, box-shadow 400ms ease',
         }}
       >
         <div style={{ position: 'absolute', right: -40, top: -40, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.12)' }} />
