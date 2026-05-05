@@ -102,36 +102,71 @@ function TrendChart({ records }: { records: DailyRecord[] }) {
   )
 }
 
-// 分類橫條圖（動態類別）
+// 分類橫條圖（動態類別，收入/支出分組）
 function CategoryBars({ records }: { records: DailyRecord[] }) {
-  const cats = getCategories()
-    .map(cat => ({
-      l: cat.name,
-      v: records.reduce((s, r) => {
-        const map = cat.type === 'income' ? (r.incomes ?? {}) : (r.expenses ?? {})
-        return s + (map[cat.id] ?? 0)
-      }, 0),
-      c: (colorMap[cat.color] ?? colorMap['mint']).bg,
-    }))
-    .filter(c => c.v > 0)
-  const maxV = Math.max(...cats.map(c => c.v), 1)
+  const allCats = getCategories()
+  const buildGroup = (type: 'income' | 'expense') => {
+    const items = allCats
+      .filter(cat => cat.type === type)
+      .map(cat => ({
+        l: cat.name,
+        v: records.reduce((s, r) => {
+          const map = type === 'income' ? (r.incomes ?? {}) : (r.expenses ?? {})
+          return s + (map[cat.id] ?? 0)
+        }, 0),
+        c: (colorMap[cat.color] ?? colorMap['mint']).bg,
+      }))
+      .filter(c => c.v > 0)
+    const total = items.reduce((s, c) => s + c.v, 0)
+    return { items, total }
+  }
+
+  const income  = buildGroup('income')
+  const expense = buildGroup('expense')
+
+  if (income.items.length === 0 && expense.items.length === 0) return null
+
+  const renderGroup = (
+    title: string,
+    items: { l: string; v: number; c: string }[],
+    total: number,
+    totalColor: string,
+  ) => {
+    if (items.length === 0) return null
+    return (
+      <>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.4, textTransform: 'uppercase' as const }}>{title}</span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: totalColor, fontFamily: T.font.num }}>{fmt(total)}</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+          {items.map(c => {
+            const pct = total > 0 ? Math.round((c.v / total) * 100) : 0
+            return (
+              <div key={c.l}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, color: T.ink2, fontWeight: 700 }}>{c.l}</span>
+                  <span style={{ fontSize: 12, fontWeight: 800 }}>
+                    <span style={{ color: T.muted, fontFamily: T.font.num, fontWeight: 700, marginRight: 6 }}>{pct}%</span>
+                    <span style={{ color: T.ink, fontFamily: T.font.num }}>{fmt(c.v)}</span>
+                  </span>
+                </div>
+                <div style={{ height: 8, borderRadius: 4, background: T.bg, overflow: 'hidden' }}>
+                  <div style={{ width: `${Math.max(pct, c.v > 0 ? 1.5 : 0)}%`, height: '100%', background: c.c, borderRadius: 4, transition: 'width 400ms ease' }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </>
+    )
+  }
 
   return (
     <div style={{ background: T.card, borderRadius: T.r.lg, padding: 18, boxShadow: T.shadow.card }}>
       <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 14 }}>本月分類</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {cats.map(c => (
-          <div key={c.l}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ fontSize: 12, color: T.ink2, fontWeight: 700 }}>{c.l}</span>
-              <span style={{ fontSize: 12, color: T.ink, fontWeight: 800, fontFamily: T.font.num }}>{fmt(c.v)}</span>
-            </div>
-            <div style={{ height: 8, borderRadius: 4, background: T.bg, overflow: 'hidden' }}>
-              <div style={{ width: `${(c.v / maxV) * 100}%`, height: '100%', background: c.c, borderRadius: 4, transition: 'width 400ms ease' }} />
-            </div>
-          </div>
-        ))}
-      </div>
+      {renderGroup('收入', income.items, income.total, T.mintInk)}
+      {renderGroup('支出', expense.items, expense.total, T.coralInk)}
     </div>
   )
 }

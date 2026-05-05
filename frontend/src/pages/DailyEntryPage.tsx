@@ -223,6 +223,18 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
               })}
             </div>
 
+            <button style={{
+              width: '100%', marginTop: 6, padding: '10px',
+              border: `1.5px dashed ${T.hairline}`, borderRadius: 14,
+              background: 'transparent', cursor: 'pointer',
+              color: T.muted, fontSize: 13, fontWeight: 700,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              fontFamily: T.font.sans,
+            }}>
+              <Icon name="plus" size={14} stroke={2.6} />
+              新增收入來源
+            </button>
+
             {/* 收入小計 */}
             <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 14, background: T.mintSoft, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: T.mintInk }}>收入小計</span>
@@ -270,6 +282,18 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
                 )
               })}
             </div>
+
+            <button style={{
+              width: '100%', marginTop: 6, padding: '10px',
+              border: `1.5px dashed ${T.hairline}`, borderRadius: 14,
+              background: 'transparent', cursor: 'pointer',
+              color: T.muted, fontSize: 13, fontWeight: 700,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              fontFamily: T.font.sans,
+            }}>
+              <Icon name="plus" size={14} stroke={2.6} />
+              新增支出類別
+            </button>
 
             {/* 支出小計 */}
             <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 14, background: T.coralSoft, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
