@@ -97,11 +97,12 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
   const expenseCategories = getEnabledByType('expense')
 
   // 收支金額 map：key = category.id
-  const [incomes,  setIncomes]  = useState<Record<string, number>>({})
-  const [expenses, setExpenses] = useState<Record<string, number>>({})
-  const [notes,    setNotes]    = useState('')
-  const [saved,    setSaved]    = useState(false)
-  const [focusKey, setFocusKey] = useState<string | null>(null)
+  const [incomes,      setIncomes]      = useState<Record<string, number>>({})
+  const [expenses,     setExpenses]     = useState<Record<string, number>>({})
+  const [notes,        setNotes]        = useState('')
+  const [saved,        setSaved]        = useState(false)
+  const [showConfirm,  setShowConfirm]  = useState(false)
+  const [focusKey,     setFocusKey]     = useState<string | null>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
 
   // 載入既有紀錄填入表單
@@ -131,11 +132,24 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
   const netAfterFees = net - fees
 
   const handleSave = async () => {
+    setShowConfirm(false)
     await save({ incomes, expenses, notes })
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
     onSync?.()
   }
+
+  const handleSaveClick = () => {
+    if (record) {
+      setShowConfirm(true)  // 更新既有紀錄前先確認
+    } else {
+      handleSave()
+    }
+  }
+
+  // 日期格式化：2026-05-05 → 2026年5月5日
+  const [y, mo, d] = date.split('-')
+  const dateLabel = `${y}年${parseInt(mo)}月${parseInt(d)}日`
 
   return (
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -323,9 +337,9 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
             />
           </div>
 
-          {/* 儲存按鈕 */}
+          {/* 儲存 / 更新按鈕 */}
           <button
-            onClick={handleSave}
+            onClick={handleSaveClick}
             style={{
               width: '100%', padding: '16px', borderRadius: T.r.lg, border: 'none',
               background: saved ? T.mint : T.ink,
@@ -337,8 +351,58 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
                 : `0 8px 24px rgba(26,27,37,0.24)`,
             }}
           >
-            {saved ? '已儲存 ✓' : record ? '更新今日帳目' : '儲存今日帳目'}
+            {saved ? '已儲存 ✓' : record ? '更新帳目' : '儲存帳目'}
           </button>
+
+          {/* 更新確認 modal */}
+          {showConfirm && (
+            <div
+              onClick={() => setShowConfirm(false)}
+              style={{
+                position: 'fixed', inset: 0, zIndex: 100,
+                background: 'rgba(0,0,0,0.4)',
+                display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                padding: '0 16px 32px',
+              }}
+            >
+              <div
+                onClick={e => e.stopPropagation()}
+                style={{
+                  width: '100%', maxWidth: 480,
+                  background: '#fff', borderRadius: 24, padding: 24,
+                  display: 'flex', flexDirection: 'column', gap: 16,
+                  boxShadow: '0 -4px 32px rgba(0,0,0,0.12)',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>確定更新帳目？</div>
+                  <div style={{ fontSize: 13, color: T.muted, fontWeight: 600, marginTop: 6 }}>
+                    更新到 {dateLabel}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    onClick={() => setShowConfirm(false)}
+                    style={{
+                      flex: 1, padding: '14px 0', borderRadius: T.r.md,
+                      border: `1.5px solid ${T.hairline}`, background: 'transparent',
+                      fontSize: 14, fontWeight: 700, color: T.ink2,
+                      cursor: 'pointer', fontFamily: T.font.sans,
+                    }}
+                  >取消</button>
+                  <button
+                    onClick={handleSave}
+                    style={{
+                      flex: 2, padding: '14px 0', borderRadius: T.r.md,
+                      border: 'none', background: T.ink,
+                      fontSize: 14, fontWeight: 800, color: '#fff',
+                      cursor: 'pointer', fontFamily: T.font.sans,
+                    }}
+                  >確定更新</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 當日淨額 summary 深色卡（已扣平台手續費） */}
           <div
