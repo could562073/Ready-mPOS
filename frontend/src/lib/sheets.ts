@@ -350,10 +350,8 @@ export async function pullAllFromSheets(spreadsheetId: string, categories: Categ
           expenses[cat.id] = val
         } else if (cat) {
           incomes[cat.id] = val
-        } else {
-          // 找不到對應類別（可能已刪除），以欄名為 key 暫放 incomes
-          incomes[colName] = val
         }
+        // 找不到對應類別的欄位直接略過，避免污染 incomes 造成金額虛增
       })
 
       records.push({
