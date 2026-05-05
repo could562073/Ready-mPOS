@@ -60,8 +60,11 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
   const todayStr = toLocalDateString(today)
   const monthStr = toMonthString(today)
 
+  const prevMonthStr = toMonthString(new Date(today.getFullYear(), today.getMonth() - 1, 1))
+
   const { record: todayRecord } = useDailyRecord(todayStr)
-  const { records: monthRecords } = useMonthlyRecords(monthStr)
+  const { records: monthRecords }     = useMonthlyRecords(monthStr)
+  const { records: prevMonthRecords } = useMonthlyRecords(prevMonthStr)
 
   // 從 localStorage 讀取啟用類別（mount 時讀一次）
   const incomeCategories  = getEnabledByType('income')
@@ -93,15 +96,33 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
   // 今日成本率（總支出 / 總收入）
   const costPct = todayIncome > 0 ? Math.round((todayExpense / todayIncome) * 100) : 0
 
+  // 合併當月 + 上月紀錄，供跨月份的 7 天查找
+  const allRecords = [...prevMonthRecords, ...monthRecords]
+
   // 近 7 天收入 bar chart 資料
   const last7 = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today)
     d.setDate(today.getDate() - (6 - i))
     const ds = toLocalDateString(d)
-    const rec = monthRecords.find(r => r.date === ds)
+    const rec = allRecords.find(r => r.date === ds)
     return { value: rec ? dayIncome(rec, knownIncomeIds) : 0, isToday: ds === todayStr, day: d.getDate() }
   })
   const week7Income = last7.reduce((s, b) => s + b.value, 0)
+
+  // 前 7 天收入（用於趨勢比較）
+  const prev7Income = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today)
+    d.setDate(today.getDate() - (13 - i))
+    const ds = toLocalDateString(d)
+    const rec = allRecords.find(r => r.date === ds)
+    return rec ? dayIncome(rec, knownIncomeIds) : 0
+  }).reduce((s, v) => s + v, 0)
+
+  // 趨勢 badge：相對前 7 天的漲跌幅
+  const trendPct = prev7Income > 0
+    ? Math.round(((week7Income - prev7Income) / prev7Income) * 100)
+    : week7Income > 0 ? null : 0  // 前期無資料且本期有值 → null（顯示「新」）
+  const trendUp = trendPct === null || trendPct >= 0
 
   // 外送佔比洞察：fee > 0 類別合計 > 40% 才顯示
   const feeIncome = todayRecord
@@ -312,9 +333,14 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
               {fmt(week7Income)}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: T.mintInk, fontSize: 12, fontWeight: 700, background: T.mintSoft, padding: '4px 8px', borderRadius: 8 }}>
-            <Icon name="trend-up" size={12} stroke={2.6} />
-            本週
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '4px 8px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+            background: trendUp ? T.mintSoft : T.coralSoft,
+            color:      trendUp ? T.mintInk  : T.coralInk,
+          }}>
+            <Icon name={trendUp ? 'trend-up' : 'trend-down'} size={12} stroke={2.6} />
+            {trendPct === null ? '新紀錄' : `${trendPct >= 0 ? '+' : ''}${trendPct}%`}
           </div>
         </div>
         <MiniBarChart bars={last7} />
