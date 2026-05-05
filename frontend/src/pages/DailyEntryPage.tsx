@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { T, PLATFORM_FEES, incomeColors, expenseColors } from '../lib/tokens'
+import { T, colorMap } from '../lib/tokens'
 import { fmt } from '../lib/fmt'
 import { Icon } from '../components/Icon'
 import { useDailyRecord } from '../hooks/useDailyRecord'
+import { getEnabledByType } from '../lib/categories'
 import type { TokenColor } from '../lib/tokens'
 
 interface DailyEntryPageProps {
@@ -11,20 +12,6 @@ interface DailyEntryPageProps {
   onSync?: () => void
   syncing?: boolean
 }
-
-// 表單欄位設定
-const INCOME_FIELDS = [
-  { key: 'cashIncome',     label: '現金收入',   icon: 'cash',    color: incomeColors.cash,  sublabel: null                   },
-  { key: 'cardIncome',     label: '刷卡收入',   icon: 'card',    color: incomeColors.card,  sublabel: null                   },
-  { key: 'uberEatsIncome', label: 'Uber Eats',  icon: 'bike',    color: incomeColors.uber,  sublabel: '自動扣 30% 平台手續費' },
-  { key: 'pandaIncome',    label: 'foodpanda',  icon: 'package', color: incomeColors.panda, sublabel: '自動扣 35% 平台手續費' },
-] as const
-
-const EXPENSE_FIELDS = [
-  { key: 'foodCost',    label: '食材採購', icon: 'package', color: expenseColors.food },
-  { key: 'staffSalary', label: '員工薪資', icon: 'users',   color: expenseColors.wage },
-  { key: 'miscExpense', label: '雜支',     icon: 'tag',     color: expenseColors.misc },
-] as const
 
 // 單一金額輸入欄
 function AmountField({
@@ -93,81 +80,67 @@ function AmountField({
   )
 }
 
-// 格式化日期標籤
 function formatDateLabel(dateStr: string) {
   const d = new Date(dateStr + 'T00:00:00')
   const DOW = ['週日','週一','週二','週三','週四','週五','週六'][d.getDay()]
   return `${d.getMonth() + 1}月${d.getDate()}日 · ${DOW}`
 }
 
+// 取備用顏色（colorMap 找不到時 fallback）
+const FALLBACK_COLOR: TokenColor = { bg: T.lavender, soft: T.lavenderSoft, ink: T.lavenderInk }
+
 export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEntryPageProps) {
   const { record, loading, save } = useDailyRecord(date)
 
-  const [cashIncome,     setCashIncome]     = useState(0)
-  const [cardIncome,     setCardIncome]     = useState(0)
-  const [uberEatsIncome, setUberEatsIncome] = useState(0)
-  const [pandaIncome,    setPandaIncome]    = useState(0)
-  const [foodCost,       setFoodCost]       = useState(0)
-  const [staffSalary,    setStaffSalary]    = useState(0)
-  const [miscExpense,    setMiscExpense]    = useState(0)
-  const [notes,          setNotes]          = useState('')
+  // 從 localStorage 讀取啟用的類別（mount 時讀取一次，切換頁面後重新 mount 自動更新）
+  const incomeCategories = getEnabledByType('income')
+  const expenseCategories = getEnabledByType('expense')
+
+  // 收支金額 map：key = category.id
+  const [incomes,  setIncomes]  = useState<Record<string, number>>({})
+  const [expenses, setExpenses] = useState<Record<string, number>>({})
+  const [notes,    setNotes]    = useState('')
   const [saved,    setSaved]    = useState(false)
   const [focusKey, setFocusKey] = useState<string | null>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
 
   // 載入既有紀錄填入表單
-  // deps 包含 record：useLiveQuery 在切換日期時可能短暫保留舊資料（不立刻回傳 undefined），
-  // 若只依賴 [date, loading] 會在 loading 未改變時用舊日期資料填入新日期表單
   useEffect(() => {
     if (loading) return
-    // 守衛：record 仍是上一個日期的 stale 資料，等真正的 query 解析完再填入
     if (record && record.date !== date) return
     if (record) {
-      setCashIncome(record.cashIncome)
-      setCardIncome(record.cardIncome)
-      setUberEatsIncome(record.uberEatsIncome)
-      setPandaIncome(record.pandaIncome)
-      setFoodCost(record.foodCost)
-      setStaffSalary(record.staffSalary)
-      setMiscExpense(record.miscExpense)
+      setIncomes({ ...record.incomes })
+      setExpenses({ ...record.expenses })
       setNotes(record.notes ?? '')
     } else {
-      setCashIncome(0); setCardIncome(0); setUberEatsIncome(0); setPandaIncome(0)
-      setFoodCost(0); setStaffSalary(0); setMiscExpense(0); setNotes('')
+      setIncomes({})
+      setExpenses({})
+      setNotes('')
     }
     setSaved(false)
   }, [date, record, loading])
 
-  const totalIncome  = cashIncome + cardIncome + uberEatsIncome + pandaIncome
-  const totalExpense = foodCost + staffSalary + miscExpense
+  const totalIncome  = incomeCategories.reduce((s, c) => s + (incomes[c.id] ?? 0), 0)
+  const totalExpense = expenseCategories.reduce((s, c) => s + (expenses[c.id] ?? 0), 0)
   const net          = totalIncome - totalExpense
-  const fees         = uberEatsIncome * PLATFORM_FEES.uber + pandaIncome * PLATFORM_FEES.panda
+
+  // 平台手續費：有 fee > 0 的收入類別
+  const fees = incomeCategories
+    .filter(c => c.fee && c.fee > 0)
+    .reduce((s, c) => s + (incomes[c.id] ?? 0) * c.fee!, 0)
   const netAfterFees = net - fees
 
   const handleSave = async () => {
-    await save({ cashIncome, cardIncome, uberEatsIncome, pandaIncome, foodCost, staffSalary, miscExpense, notes })
+    await save({ incomes, expenses, notes })
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
     onSync?.()
   }
 
-  // 欄位值 map（方便統一渲染）
-  const incomeValues: Record<string, number> = { cashIncome, cardIncome, uberEatsIncome, pandaIncome }
-  const incomeSetters: Record<string, (v: number) => void> = {
-    cashIncome: setCashIncome, cardIncome: setCardIncome,
-    uberEatsIncome: setUberEatsIncome, pandaIncome: setPandaIncome,
-  }
-  const expenseValues: Record<string, number>  = { foodCost, staffSalary, miscExpense }
-  const expenseSetters: Record<string, (v: number) => void> = {
-    foodCost: setFoodCost, staffSalary: setStaffSalary, miscExpense: setMiscExpense,
-  }
-
   return (
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* 日期選擇 + 自動儲存狀態 */}
+      {/* 日期選擇 + 同步狀態 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px' }}>
-        {/* onClick 呼叫 showPicker() 解決 desktop 必須點到隱藏日曆圖示才能開啟的問題 */}
-        {/* overlay input 保留讓 iOS 直接觸碰時能打開原生選擇器 */}
         <div
           style={{ position: 'relative', display: 'inline-block', cursor: 'pointer' }}
           onClick={() => { try { dateInputRef.current?.showPicker() } catch {} }}
@@ -225,21 +198,29 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
                 </div>
                 <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>收入</span>
               </div>
-              <span style={{ fontSize: 11, color: T.muted, fontWeight: 600 }}>4 個來源</span>
+              <span style={{ fontSize: 11, color: T.muted, fontWeight: 600 }}>
+                {incomeCategories.length} 個來源
+              </span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {INCOME_FIELDS.map(f => (
-                <AmountField
-                  key={f.key}
-                  icon={f.icon} label={f.label} sublabel={f.sublabel}
-                  color={f.color}
-                  value={incomeValues[f.key]}
-                  onChange={incomeSetters[f.key]}
-                  focused={focusKey === f.key}
-                  onFocus={() => setFocusKey(f.key)}
-                />
-              ))}
+              {incomeCategories.map(cat => {
+                const color = colorMap[cat.color] ?? FALLBACK_COLOR
+                const sublabel = cat.fee && cat.fee > 0
+                  ? `自動扣 ${Math.round(cat.fee * 100)}% 平台手續費`
+                  : null
+                return (
+                  <AmountField
+                    key={cat.id}
+                    icon={cat.icon} label={cat.name} sublabel={sublabel}
+                    color={color}
+                    value={incomes[cat.id] ?? 0}
+                    onChange={v => setIncomes(prev => ({ ...prev, [cat.id]: v }))}
+                    focused={focusKey === cat.id}
+                    onFocus={() => setFocusKey(cat.id)}
+                  />
+                )
+              })}
             </div>
 
             {/* 收入小計 */}
@@ -260,7 +241,6 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
                 </div>
                 <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>支出</span>
               </div>
-              {/* 拍照記帳（stub） */}
               <button
                 style={{
                   display: 'flex', alignItems: 'center', gap: 4,
@@ -275,17 +255,20 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {EXPENSE_FIELDS.map(f => (
-                <AmountField
-                  key={f.key}
-                  icon={f.icon} label={f.label} sublabel={null}
-                  color={f.color}
-                  value={expenseValues[f.key]}
-                  onChange={expenseSetters[f.key]}
-                  focused={focusKey === f.key}
-                  onFocus={() => setFocusKey(f.key)}
-                />
-              ))}
+              {expenseCategories.map(cat => {
+                const color = colorMap[cat.color] ?? FALLBACK_COLOR
+                return (
+                  <AmountField
+                    key={cat.id}
+                    icon={cat.icon} label={cat.name} sublabel={null}
+                    color={color}
+                    value={expenses[cat.id] ?? 0}
+                    onChange={v => setExpenses(prev => ({ ...prev, [cat.id]: v }))}
+                    focused={focusKey === cat.id}
+                    onFocus={() => setFocusKey(cat.id)}
+                  />
+                )
+              })}
             </div>
 
             {/* 支出小計 */}
@@ -351,21 +334,25 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
                 {fmt(net, { plus: true, sign: true })}
               </span>
             </div>
-            <div style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-              <div>
-                <div style={{ opacity: 0.55, fontWeight: 600, fontSize: 11 }}>外送平台分潤</div>
-                <div style={{ fontFamily: T.font.num, fontWeight: 700, marginTop: 2 }}>
-                  -{fmt(fees)}
+            {fees > 0 && (
+              <>
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                  <div>
+                    <div style={{ opacity: 0.55, fontWeight: 600, fontSize: 11 }}>外送平台分潤</div>
+                    <div style={{ fontFamily: T.font.num, fontWeight: 700, marginTop: 2 }}>
+                      -{fmt(fees)}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ opacity: 0.55, fontWeight: 600, fontSize: 11 }}>實收淨額</div>
+                    <div style={{ fontFamily: T.font.num, fontWeight: 700, marginTop: 2, color: '#4FE39D' }}>
+                      {fmt(netAfterFees, { plus: true, sign: true })}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ opacity: 0.55, fontWeight: 600, fontSize: 11 }}>實收淨額</div>
-                <div style={{ fontFamily: T.font.num, fontWeight: 700, marginTop: 2, color: '#4FE39D' }}>
-                  {fmt(netAfterFees, { plus: true, sign: true })}
-                </div>
-              </div>
-            </div>
+              </>
+            )}
           </div>
         </>
       )}

@@ -1,25 +1,30 @@
-// 同步狀態：PENDING = 本地未同步，SYNCED = 已同步，CONFLICT = 衝突需人工確認
-export type SyncStatus = 'PENDING' | 'SYNCED' | 'CONFLICT'
+// 同步狀態：PENDING = 本地未同步，SYNCED = 已同步雲端
+export type SyncStatus = 'PENDING' | 'SYNCED'
 
-// 每日帳目記錄（對應一張手寫日結單）
+// 類別型別：收入或支出，支援自訂圖示/顏色/手續費
+export interface Category {
+  id: string            // 唯一識別碼（localStorage + Sheets _config key）
+  name: string          // 顯示名稱
+  icon: string          // Icon 組件 name
+  color: string         // 色票 key（mint / sky / lavender / pink / peach / coral / sun）
+  fee?: number          // 平台手續費比例（0–1），收入類別用
+  enabled: boolean      // false = 停用但歷史資料仍保留
+  type: 'income' | 'expense'
+}
+
+// 每日記帳記錄 — 收支改為動態 Record，支援自訂類別增減
 export interface DailyRecord {
-  id?: number       // Dexie auto-increment primary key
-  date: string      // 'YYYY-MM-DD'
+  id?: number           // Dexie auto-increment primary key
+  date: string          // 'YYYY-MM-DD'
 
-  // 每日收入
-  cashIncome: number       // 現金收入
-  cardIncome: number       // 刷卡收入
-  uberEatsIncome: number   // Uber Eats 外送
-  pandaIncome: number      // 熊貓外送
+  // 收入：key = Category.id，value = 金額
+  incomes: Record<string, number>
+  // 支出：key = Category.id，value = 金額
+  expenses: Record<string, number>
 
-  // 每日支出
-  foodCost: number         // 食材採購
-  staffSalary: number      // 員工薪資
-  miscExpense: number      // 雜支
-
-  notes?: string           // 備註
+  notes?: string
 
   syncStatus: SyncStatus
-  createdAt: string        // ISO 8601 timestamp
-  updatedAt: string        // ISO 8601 timestamp
+  createdAt: string     // ISO 8601 timestamp
+  updatedAt: string     // ISO 8601 timestamp
 }

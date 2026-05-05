@@ -75,8 +75,19 @@ export const expenseColors: Record<string, TokenColor> = {
   misc: { bg: T.coral,    soft: T.coralSoft,    ink: T.coralInk    },
 };
 
-// 外送平台手續費率
+// 外送平台手續費率（保留向下相容，新版由 Category.fee 取代）
 export const PLATFORM_FEES: Record<string, number> = {
   uber:  0.30,
   panda: 0.35,
+};
+
+// 色票 key → TokenColor（供動態類別使用）
+export const colorMap: Record<string, TokenColor> = {
+  mint:     { bg: T.mint,     soft: T.mintSoft,     ink: T.mintInk     },
+  sky:      { bg: T.sky,      soft: T.skySoft,      ink: T.skyInk      },
+  lavender: { bg: T.lavender, soft: T.lavenderSoft, ink: T.lavenderInk },
+  pink:     { bg: T.panda,    soft: T.pandaSoft,    ink: T.pandaInk    },
+  peach:    { bg: T.peach,    soft: T.peachSoft,    ink: T.peachInk    },
+  coral:    { bg: T.coral,    soft: T.coralSoft,    ink: T.coralInk    },
+  sun:      { bg: T.sun,      soft: T.sunSoft,      ink: T.sunInk      },
 };

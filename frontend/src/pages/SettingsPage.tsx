@@ -15,6 +15,7 @@ interface Props {
   onRestore: () => void
   onClearLocal: () => Promise<void>
   onSetCustomSheet: (id: string, name: string) => void
+  onNavigateCategories: () => void
 }
 
 // 通用設定列元件（對齊原型 SettingRow）
@@ -88,7 +89,7 @@ export function SettingsPage({
   syncing, onSync,
   googleEmail, onSignIn, onSignOut, signInError, isConfigured, creating,
   restoring, onRestore, onClearLocal,
-  onSetCustomSheet,
+  onSetCustomSheet, onNavigateCategories,
 }: Props) {
   const [signingIn,    setSigningIn]    = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -315,24 +316,19 @@ export function SettingsPage({
         </div>
       )}
 
-      {/* 類別管理（對齊原型） */}
+      {/* 類別管理 */}
       <div>
         <SectionLabel label="類別管理" />
         <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
           <SettingRow
             icon="arrow-up" iconBg={T.mintSoft} iconColor={T.mintInk}
-            title="收入類別" subtitle="現金、刷卡、Uber Eats、foodpanda"
-            right={null}
+            title="收入類別" subtitle="點選管理現金、刷卡、外送等收入來源"
+            onClick={onNavigateCategories}
           />
           <SettingRow
             icon="arrow-down" iconBg={T.coralSoft} iconColor={T.coralInk}
-            title="支出類別" subtitle="食材、薪資、雜支"
-            right={null}
-          />
-          <SettingRow
-            icon="package" iconBg={T.uberSoft} iconColor={T.uberInk}
-            title="外送平台費率" subtitle="Uber Eats 30%・foodpanda 35%"
-            right={null} last
+            title="支出類別" subtitle="點選管理食材、薪資、雜支等支出項目"
+            onClick={onNavigateCategories} last
           />
         </div>
       </div>

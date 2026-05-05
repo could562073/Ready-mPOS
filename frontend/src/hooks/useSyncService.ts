@@ -7,12 +7,16 @@ import {
   signOut as googleSignOut,
   getOrCreateSpreadsheet,
   pullAllFromSheets,
+  pullConfigFromSheets,
+  pushConfigToSheets,
   getSignedInEmail,
   getSpreadsheetId,
   setSpreadsheetId,
   syncMonthToSheets,
   clearIfInvalidSpreadsheet,
 } from '../lib/sheets'
+import { getCategories } from '../lib/categories'
+import type { Category } from '../types'
 
 const AUTO_SHEET_NAME = 'Ready-mPOS 記帳'
 
@@ -24,7 +28,7 @@ export function useSyncService() {
   const [restoring, setRestoring]     = useState(false)
   const lockRef = useRef(false)
 
-  // GIS script が非同期で読み込まれるため、ロード完了後に初期化
+  // GIS script 非同步載入，輪詢直到 google.accounts 可用
   useEffect(() => {
     const init = () => initGoogleAuth()
     if ((window as any).google?.accounts) {
@@ -47,9 +51,13 @@ export function useSyncService() {
     setSyncing(true)
 
     try {
+      // 取得類別設定：優先從雲端 _config 拉取，fallback 用 localStorage
+      const cloudCategories = await pullConfigFromSheets(sheetId)
+      const categories = cloudCategories ?? getCategories()
+
       // ── Phase 1: Pull（Sheets → 本機） ────────────────────
-      // Sheets 有但本機無 → 新增；本機已 SYNCED → 以 Sheets 覆蓋更新；PENDING → 保留本機修改
-      const sheetsRecords = await pullAllFromSheets(sheetId)
+      // SYNCED 記錄以 Sheets 為主；PENDING 保留本機修改
+      const sheetsRecords = await pullAllFromSheets(sheetId, categories)
       for (const r of sheetsRecords) {
         const local = await db.dailyRecords.where('date').equals(r.date).first()
         if (!local) {
@@ -57,7 +65,7 @@ export function useSyncService() {
         } else if (local.syncStatus === 'SYNCED') {
           await db.dailyRecords.update(local.id!, { ...r, id: local.id })
         }
-        // PENDING は本機修改優先、上書きしない
+        // PENDING 本機修改優先，不覆蓋
       }
 
       // ── Phase 2: Push（本機 PENDING → Sheets） ───────────
@@ -69,7 +77,7 @@ export function useSyncService() {
           .filter(r => r.date.startsWith(month))
           .sortBy('date')
 
-        await syncMonthToSheets(sheetId, month, allForMonth)
+        await syncMonthToSheets(sheetId, month, allForMonth, categories)
 
         await Promise.all(
           allForMonth
@@ -77,8 +85,6 @@ export function useSyncService() {
             .map(r => db.dailyRecords.update(r.id!, { syncStatus: 'SYNCED' }))
         )
       }
-
-      // sync completed
     } catch (err) {
       console.error('[sync] failed:', err)
     } finally {
@@ -87,16 +93,18 @@ export function useSyncService() {
     }
   }, [])
 
-  // 強制從雲端還原：清空本機所有資料後以雲端資料取代（完整覆蓋，含空試算表場景）
+  // 強制從雲端還原：清空本機後以雲端資料完整覆蓋
   const restoreFromSheets = useCallback(async () => {
     const sheetId = getSpreadsheetId()
     if (!sheetId || !getSignedInEmail()) return
-    // 防止與進行中的 syncAll 產生 race condition（syncAll 可能正在把舊 PENDING 推上雲端）
     if (lockRef.current) return
     lockRef.current = true
     setRestoring(true)
     try {
-      const records = await pullAllFromSheets(sheetId)
+      const cloudCategories = await pullConfigFromSheets(sheetId)
+      const categories = cloudCategories ?? getCategories()
+
+      const records = await pullAllFromSheets(sheetId, categories)
       await db.dailyRecords.clear()
       if (records.length > 0) {
         await db.dailyRecords.bulkAdd(records)
@@ -109,9 +117,19 @@ export function useSyncService() {
     }
   }, [])
 
-  // 清除本機所有資料（不影響雲端試算表）
   const clearLocalData = useCallback(async () => {
     await db.dailyRecords.clear()
+  }, [])
+
+  // 將本地類別設定上傳至 _config tab（類別頁面儲存後呼叫）
+  const syncCategories = useCallback(async (categories: Category[]) => {
+    const sheetId = getSpreadsheetId()
+    if (!sheetId || !getSignedInEmail() || !navigator.onLine) return
+    try {
+      await pushConfigToSheets(sheetId, categories)
+    } catch (err) {
+      console.error('[sync-config] failed:', err)
+    }
   }, [])
 
   const signIn = useCallback(async () => {
@@ -121,20 +139,17 @@ export function useSyncService() {
       const email = await googleSignIn()
       setGoogleEmail(email)
 
-      // 驗證已儲存的試算表 ID 是否仍有效（未被刪除或移至垃圾桶），無效則清除
       await clearIfInvalidSpreadsheet()
 
-      // 尚無本地試算表 ID → 搜尋 Drive 上同名檔案，找不到才新建
-      // 確保同一帳號在不同裝置指向同一份試算表
       if (!getSpreadsheetId()) {
         setCreating(true)
-        const currentMonth = new Date().toISOString().slice(0, 7) // 'YYYY-MM'
+        const currentMonth = new Date().toISOString().slice(0, 7)
         const id = await getOrCreateSpreadsheet(AUTO_SHEET_NAME, currentMonth)
         setSpreadsheetId(id, AUTO_SHEET_NAME)
         setCreating(false)
       }
 
-      // 登入後立即雙向同步：拉取雲端最新資料 + 推送本機 PENDING
+      // 登入後立即雙向同步（含 _config 拉取）
       syncAll()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -163,6 +178,7 @@ export function useSyncService() {
   return {
     syncing,
     syncAll,
+    syncCategories,
     googleEmail,
     signIn,
     signOut,
