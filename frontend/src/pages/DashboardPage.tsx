@@ -203,8 +203,11 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
         <Icon name="chevron-r" size={18} color={T.muted} stroke={2.4} />
       </button>
 
-      {/* 今日收入來源分解（動態類別，條列式） */}
-      {incomeCategories.length > 0 && (
+      {/* 今日收入來源分解（動態類別，條列式）— 已停用但有值的類別也照常顯示 */}
+      {(() => {
+        const rows = allCategories.filter(c => c.type === 'income' && (c.enabled || (todayRecord?.incomes[c.id] ?? 0) > 0))
+        if (rows.length === 0) return null
+        return (
         <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -216,11 +219,11 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
             <span style={{ fontSize: 16, fontWeight: 800, color: T.mintInk, fontFamily: T.font.num, letterSpacing: -0.3 }}>{fmt(todayIncome)}</span>
           </div>
           <div style={{ borderTop: `1px solid ${T.hairline}` }}>
-            {incomeCategories.map((cat, i) => {
+            {rows.map((cat, i) => {
               const color = colorMap[cat.color] ?? colorMap['mint']
               const value = todayRecord?.incomes[cat.id] ?? 0
               const pct   = todayIncome > 0 ? Math.round((value / todayIncome) * 100) : 0
-              const isLast = i === incomeCategories.length - 1
+              const isLast = i === rows.length - 1
               return (
                 <div key={cat.id} style={{
                   display: 'flex', alignItems: 'center', gap: 12,
@@ -247,10 +250,14 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
             })}
           </div>
         </div>
-      )}
+        )
+      })()}
 
-      {/* 今日支出明細 */}
-      {expenseCategories.length > 0 && (
+      {/* 今日支出明細 — 已停用但有值的類別也照常顯示 */}
+      {(() => {
+        const rows = allCategories.filter(c => c.type === 'expense' && (c.enabled || (todayRecord?.expenses[c.id] ?? 0) > 0))
+        if (rows.length === 0) return null
+        return (
         <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -262,11 +269,11 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
             <span style={{ fontSize: 16, fontWeight: 800, color: T.coralInk, fontFamily: T.font.num, letterSpacing: -0.3 }}>{fmt(todayExpense)}</span>
           </div>
           <div style={{ borderTop: `1px solid ${T.hairline}` }}>
-            {expenseCategories.map((cat, i) => {
+            {rows.map((cat, i) => {
               const color = colorMap[cat.color] ?? colorMap['coral']
               const value = todayRecord?.expenses[cat.id] ?? 0
               const pct   = todayExpense > 0 ? Math.round((value / todayExpense) * 100) : 0
-              const isLast = i === expenseCategories.length - 1
+              const isLast = i === rows.length - 1
               return (
                 <div key={cat.id} style={{
                   display: 'flex', alignItems: 'center', gap: 12,
@@ -293,7 +300,8 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
             })}
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* 近 7 天收入小圖 */}
       <div style={{ padding: 18, borderRadius: T.r.lg, background: T.card, boxShadow: T.shadow.card }}>
