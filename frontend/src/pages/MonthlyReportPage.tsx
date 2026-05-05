@@ -368,18 +368,6 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
             </div>
           )}
 
-          {/* 匯出按鈕（stub） */}
-          <button
-            style={{
-              padding: 14, borderRadius: T.r.md, border: 'none',
-              background: T.card, boxShadow: T.shadow.card,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              fontSize: 14, fontWeight: 700, color: T.ink, cursor: 'pointer', fontFamily: T.font.sans,
-            }}
-          >
-            <Icon name="cloud" size={16} stroke={2.4} color={T.lavenderInk} />
-            匯出 PDF / 同步 Google Sheets
-          </button>
         </>
       )}
     </div>

@@ -258,7 +258,54 @@ export function SettingsPage({
         </div>
       )}
 
-      {googleEmail ? (
+      {/* 類別管理 */}
+      <div>
+        <SectionLabel label="類別管理" />
+        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
+          <SettingRow
+            icon="arrow-up" iconBg={T.mintSoft} iconColor={T.mintInk}
+            title="收入類別" subtitle="現金、刷卡、Uber Eats、foodpanda"
+            onClick={onNavigateCategories}
+          />
+          <SettingRow
+            icon="arrow-down" iconBg={T.coralSoft} iconColor={T.coralInk}
+            title="支出類別" subtitle="食材、薪資、雜支"
+            onClick={onNavigateCategories}
+          />
+          <SettingRow
+            icon="package" iconBg="#E8E0F8" iconColor="#5B3DA8"
+            title="外送平台費率" subtitle="Uber 30% · foodpanda 35%"
+            onClick={onNavigateCategories} last
+          />
+        </div>
+      </div>
+
+      {/* 應用程式 */}
+      <div>
+        <SectionLabel label="應用程式" />
+        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
+          <SettingRow
+            icon="cloud" iconBg={T.skySoft} iconColor={T.skyInk}
+            title="自動同步" subtitle="每筆變更即時上傳"
+            right={<Toggle on={autoSync} onChange={setAutoSync} />}
+          />
+          <SettingRow
+            icon="sparkle" iconBg={T.sunSoft} iconColor={T.sunInk}
+            title="打烊提醒" subtitle="每晚 22:30 提醒記帳"
+            right={<Toggle on={reminder} onChange={setReminder} />}
+          />
+          <SettingRow
+            icon="camera" iconBg={T.peachSoft} iconColor={T.peachInk}
+            title="發票 OCR 辨識" subtitle="拍照自動填入金額"
+            right={null} last
+          />
+        </div>
+      </div>
+
+      {/* 資料 — 含 Google Sheets 同步 */}
+      <div>
+        <SectionLabel label="資料" />
+        {googleEmail ? (
         /* ── 已連結：緊湊同步狀態卡（對齊原型） ── */
         <div style={{ background: T.card, borderRadius: 22, padding: '14px 16px', boxShadow: T.shadow.card }}>
           {/* 帳號 + 同步按鈕 */}
@@ -410,66 +457,7 @@ export function SettingsPage({
             </button>
           </div>
         </div>
-      )}
-
-      {/* 類別管理 */}
-      <div>
-        <SectionLabel label="類別管理" />
-        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
-          <SettingRow
-            icon="arrow-up" iconBg={T.mintSoft} iconColor={T.mintInk}
-            title="收入類別" subtitle="現金、刷卡、Uber Eats、foodpanda"
-            onClick={onNavigateCategories}
-          />
-          <SettingRow
-            icon="arrow-down" iconBg={T.coralSoft} iconColor={T.coralInk}
-            title="支出類別" subtitle="食材、薪資、雜支"
-            onClick={onNavigateCategories}
-          />
-          <SettingRow
-            icon="package" iconBg="#E8E0F8" iconColor="#5B3DA8"
-            title="外送平台費率" subtitle="Uber 30% · foodpanda 35%"
-            onClick={onNavigateCategories} last
-          />
-        </div>
-      </div>
-
-      {/* 應用程式（對齊原型） */}
-      <div>
-        <SectionLabel label="應用程式" />
-        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
-          <SettingRow
-            icon="cloud" iconBg={T.skySoft} iconColor={T.skyInk}
-            title="自動同步" subtitle="每筆變更即時上傳"
-            right={<Toggle on={autoSync} onChange={setAutoSync} />}
-          />
-          <SettingRow
-            icon="sparkle" iconBg={T.sunSoft} iconColor={T.sunInk}
-            title="打烊提醒" subtitle="每晚 22:30 提醒記帳"
-            right={<Toggle on={reminder} onChange={setReminder} />}
-          />
-          <SettingRow
-            icon="camera" iconBg={T.peachSoft} iconColor={T.peachInk}
-            title="發票 OCR 辨識" subtitle="拍照自動填入金額"
-            right={null} last
-          />
-        </div>
-      </div>
-
-      {/* 資料（對齊原型） */}
-      <div>
-        <SectionLabel label="資料" />
-        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
-          <SettingRow
-            icon="receipt" iconBg={T.lavenderSoft} iconColor={T.lavenderInk}
-            title="匯出對帳單" subtitle="PDF / CSV / Google Sheets"
-          />
-          <SettingRow
-            icon="cloud-check" iconBg={T.mintSoft} iconColor={T.mintInk}
-            title="本地備份" subtitle="IndexedDB · 本機儲存"
-            right={null} last
-          />
-        </div>
+        )}
       </div>
 
       <div style={{ textAlign: 'center', fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 8 }}>
