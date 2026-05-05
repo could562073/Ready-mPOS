@@ -173,9 +173,11 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
         <div style={{ position: 'absolute', right: 30, bottom: -50, width: 120, height: 120, borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
 
         <div style={{ position: 'relative', zIndex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, opacity: 0.85 }}>今日淨額</div>
+          <div style={{ fontSize: 13, fontWeight: 600, opacity: 0.85 }}>
+            {feeCategories.length > 0 ? '今日淨額（扣分潤後）' : '今日淨額'}
+          </div>
           <div style={{ fontSize: 40, fontWeight: 800, fontFamily: T.font.num, letterSpacing: -1, marginTop: 4, lineHeight: 1.1 }}>
-            {fmt(todayNet, { plus: true })}
+            {fmt(todayNetAfterFees, { plus: true })}
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 14 }}>
             <div style={{ flex: 1 }}>
@@ -187,11 +189,15 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
               <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 600 }}>支出</div>
               <div style={{ fontSize: 17, fontWeight: 700, fontFamily: T.font.num, marginTop: 2 }}>{fmt(todayExpense)}</div>
             </div>
-            <div style={{ width: 1, background: 'rgba(255,255,255,0.2)' }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 600 }}>{feeCategories.length > 0 ? '扣分潤後' : '淨額'}</div>
-              <div style={{ fontSize: 17, fontWeight: 700, fontFamily: T.font.num, marginTop: 2 }}>{fmt(todayNetAfterFees, { plus: true })}</div>
-            </div>
+            {feeCategories.length > 0 && (
+              <>
+                <div style={{ width: 1, background: 'rgba(255,255,255,0.2)' }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 600 }}>平台費</div>
+                  <div style={{ fontSize: 17, fontWeight: 700, fontFamily: T.font.num, marginTop: 2 }}>-{fmt(totalFees)}</div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

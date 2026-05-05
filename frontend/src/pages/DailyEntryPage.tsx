@@ -111,13 +111,15 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
   const [focusKey,     setFocusKey]     = useState<string | null>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
 
-  // 載入既有紀錄填入表單
+  // 載入既有紀錄填入表單，過濾已刪除類別的孤立 key 避免寫回髒資料
   useEffect(() => {
     if (loading) return
     if (record && record.date !== date) return
     if (record) {
-      setIncomes({ ...record.incomes })
-      setExpenses({ ...record.expenses })
+      const knownInc = new Set(allCats.filter(c => c.type === 'income').map(c => c.id))
+      const knownExp = new Set(allCats.filter(c => c.type === 'expense').map(c => c.id))
+      setIncomes(Object.fromEntries(Object.entries(record.incomes  ?? {}).filter(([k]) => knownInc.has(k))))
+      setExpenses(Object.fromEntries(Object.entries(record.expenses ?? {}).filter(([k]) => knownExp.has(k))))
       setNotes(record.notes ?? '')
     } else {
       setIncomes({})
