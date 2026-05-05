@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../db'
 import {
   initGoogleAuth,
+  warmToken,
   isGoogleConfigured,
   signIn as googleSignIn,
   signOut as googleSignOut,
@@ -29,8 +30,14 @@ export function useSyncService() {
   const lockRef = useRef(false)
 
   // GIS script 非同步載入，輪詢直到 google.accounts 可用
+  // 初始化後若已登入則靜默預取 token，把授權彈窗集中在啟動時，不在儲存/同步操作中途出現
   useEffect(() => {
-    const init = () => initGoogleAuth()
+    const init = () => {
+      initGoogleAuth()
+      if (getSignedInEmail()) {
+        warmToken().catch(() => {})
+      }
+    }
     if ((window as any).google?.accounts) {
       init()
     } else {

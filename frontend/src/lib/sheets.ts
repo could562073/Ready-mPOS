@@ -34,8 +34,20 @@ interface TokenInfo {
   expires_at: number // epoch ms
 }
 
+// sessionStorage key — token 存活在同一瀏覽器 session，頁面重整後仍可沿用，不需重新彈窗
+const SS_TOKEN  = 'gsheets_tk'
+const SS_EXPIRY = 'gsheets_tk_exp'
+
 let tokenClient: any = null
-let tokenInfo: TokenInfo | null = null
+// 嘗試從 sessionStorage 還原上次取得的 token
+let tokenInfo: TokenInfo | null = (() => {
+  try {
+    const t = sessionStorage.getItem(SS_TOKEN)
+    const e = Number(sessionStorage.getItem(SS_EXPIRY))
+    if (t && e && Date.now() < e) return { access_token: t, expires_at: e }
+  } catch {}
+  return null
+})()
 let pendingResolve: ((t: string) => void) | null = null
 let pendingReject:  ((e: Error)  => void) | null = null
 
@@ -50,10 +62,13 @@ export function initGoogleAuth(): void {
       if (resp.error || !resp.access_token) {
         pendingReject?.(new Error(resp.error ?? 'auth_failed'))
       } else {
-        tokenInfo = {
-          access_token: resp.access_token,
-          expires_at: Date.now() + ((resp.expires_in ?? 3600) - 60) * 1000,
-        }
+        const expiresAt = Date.now() + ((resp.expires_in ?? 3600) - 60) * 1000
+        tokenInfo = { access_token: resp.access_token, expires_at: expiresAt }
+        // 持久化到 sessionStorage，同 session 內頁面重整不需再授權
+        try {
+          sessionStorage.setItem(SS_TOKEN,  resp.access_token)
+          sessionStorage.setItem(SS_EXPIRY, String(expiresAt))
+        } catch {}
         pendingResolve?.(resp.access_token)
       }
       pendingResolve = pendingReject = null
@@ -78,6 +93,12 @@ function acquireToken(prompt: '' | 'consent' | 'select_account' = ''): Promise<s
   })
 }
 
+// 啟動時靜默預取 token — 把可能的授權彈窗集中在 app 啟動，而非分散在各操作中
+export async function warmToken(): Promise<void> {
+  if (tokenInfo && Date.now() < tokenInfo.expires_at) return
+  await acquireToken()
+}
+
 // ── 公開 Auth API ──────────────────────────────────────────
 
 export async function signIn(): Promise<string> {
@@ -96,6 +117,10 @@ export function signOut(): void {
     (window as any).google?.accounts.oauth2.revoke(tokenInfo.access_token)
     tokenInfo = null
   }
+  try {
+    sessionStorage.removeItem(SS_TOKEN)
+    sessionStorage.removeItem(SS_EXPIRY)
+  } catch {}
   localStorage.removeItem(LS_EMAIL)
   // 試算表 ID 保留，下次登入同帳號可直接沿用
 }
