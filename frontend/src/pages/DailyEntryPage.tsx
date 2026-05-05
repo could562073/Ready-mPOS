@@ -3,7 +3,9 @@ import { T, colorMap } from '../lib/tokens'
 import { fmt } from '../lib/fmt'
 import { Icon } from '../components/Icon'
 import { useDailyRecord } from '../hooks/useDailyRecord'
-import { getEnabledByType } from '../lib/categories'
+import { getCategories, saveCategories } from '../lib/categories'
+import { EditSheet, EMPTY_INCOME_DRAFT, EMPTY_EXPENSE_DRAFT } from '../components/CategoryEditSheet'
+import type { DraftCategory } from '../components/CategoryEditSheet'
 import type { TokenColor } from '../lib/tokens'
 
 interface DailyEntryPageProps {
@@ -92,9 +94,13 @@ const FALLBACK_COLOR: TokenColor = { bg: T.lavender, soft: T.lavenderSoft, ink: 
 export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEntryPageProps) {
   const { record, loading, save } = useDailyRecord(date)
 
-  // 從 localStorage 讀取啟用的類別（mount 時讀取一次，切換頁面後重新 mount 自動更新）
-  const incomeCategories = getEnabledByType('income')
-  const expenseCategories = getEnabledByType('expense')
+  // 以 state 持有類別清單，新增類別後可即時刷新表單欄位
+  const [allCats, setAllCats] = useState(() => getCategories())
+  const incomeCategories  = allCats.filter(c => c.type === 'income'  && c.enabled)
+  const expenseCategories = allCats.filter(c => c.type === 'expense' && c.enabled)
+
+  // 新增類別 sheet：'income' | 'expense' | null
+  const [addingType, setAddingType] = useState<'income' | 'expense' | null>(null)
 
   // 收支金額 map：key = category.id
   const [incomes,      setIncomes]      = useState<Record<string, number>>({})
@@ -145,6 +151,14 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
     } else {
       handleSave()
     }
+  }
+
+  // 新增類別後寫入 localStorage 並刷新本地 state
+  const handleCategoryAdd = (draft: DraftCategory) => {
+    const updated = [...allCats, { ...draft, id: draft.id || Date.now().toString(36) }]
+    saveCategories(updated)
+    setAllCats(updated)
+    setAddingType(null)
   }
 
   // 日期格式化：2026-05-05 → 2026年5月5日
@@ -237,14 +251,17 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
               })}
             </div>
 
-            <button style={{
-              width: '100%', marginTop: 6, padding: '10px',
-              border: `1.5px dashed ${T.hairline}`, borderRadius: 14,
-              background: 'transparent', cursor: 'pointer',
-              color: T.muted, fontSize: 13, fontWeight: 700,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              fontFamily: T.font.sans,
-            }}>
+            <button
+              onClick={() => setAddingType('income')}
+              style={{
+                width: '100%', marginTop: 6, padding: '10px',
+                border: `1.5px dashed ${T.mint}`, borderRadius: 14,
+                background: 'transparent', cursor: 'pointer',
+                color: T.mint, fontSize: 13, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                fontFamily: T.font.sans,
+              }}
+            >
               <Icon name="plus" size={14} stroke={2.6} />
               新增收入來源
             </button>
@@ -297,14 +314,17 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
               })}
             </div>
 
-            <button style={{
-              width: '100%', marginTop: 6, padding: '10px',
-              border: `1.5px dashed ${T.hairline}`, borderRadius: 14,
-              background: 'transparent', cursor: 'pointer',
-              color: T.muted, fontSize: 13, fontWeight: 700,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              fontFamily: T.font.sans,
-            }}>
+            <button
+              onClick={() => setAddingType('expense')}
+              style={{
+                width: '100%', marginTop: 6, padding: '10px',
+                border: `1.5px dashed ${T.coral}`, borderRadius: 14,
+                background: 'transparent', cursor: 'pointer',
+                color: T.coral, fontSize: 13, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                fontFamily: T.font.sans,
+              }}
+            >
               <Icon name="plus" size={14} stroke={2.6} />
               新增支出類別
             </button>
@@ -443,6 +463,17 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
             )}
           </div>
         </>
+      )}
+
+      {/* 新增類別 sheet（從記帳頁快速新增收入/支出來源） */}
+      {addingType && (
+        <EditSheet
+          draft={{ ...(addingType === 'income' ? EMPTY_INCOME_DRAFT : EMPTY_EXPENSE_DRAFT), id: Date.now().toString(36) }}
+          isNew
+          onSave={handleCategoryAdd}
+          onDelete={() => {}}
+          onClose={() => setAddingType(null)}
+        />
       )}
     </div>
   )
