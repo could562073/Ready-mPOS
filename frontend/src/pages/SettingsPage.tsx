@@ -161,7 +161,7 @@ export function SettingsPage({
 
       {/* 店家身份卡 */}
       <div style={{
-        padding: 18, borderRadius: T.r.xl,
+        padding: 18, borderRadius: 24,
         background: `linear-gradient(135deg, ${T.lavenderSoft} 0%, ${T.skySoft} 100%)`,
       }}>
         {editingProfile ? (
@@ -223,37 +223,24 @@ export function SettingsPage({
               {restaurantName.slice(0, 1)}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {restaurantName}
               </div>
-              {ownerName ? (
-                <div style={{ fontSize: 12, color: T.ink2, fontWeight: 600, marginTop: 2 }}>老闆：{ownerName}</div>
-              ) : (
-                <div style={{ fontSize: 12, color: T.muted, fontWeight: 600, marginTop: 2 }}>點右側鉛筆填入老闆姓名</div>
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  padding: '4px 10px', borderRadius: 999,
-                  background: 'rgba(255,255,255,0.7)',
-                }}>
-                  <Icon name="receipt" size={12} stroke={2.4} color={T.lavenderInk} />
-                  <span style={{ fontSize: 11, fontWeight: 700, color: T.lavenderInk }}>
-                    已記帳 {recordCount} 天
-                  </span>
-                </div>
+              <div style={{ fontSize: 12, color: T.ink2, fontWeight: 600, marginTop: 2 }}>
+                已記帳 {recordCount} 天{ownerName ? ` · 老闆 ${ownerName}` : ''}
               </div>
             </div>
             <button
               onClick={handleEditProfile}
               style={{
-                width: 34, height: 34, borderRadius: 11, border: 'none',
-                background: 'rgba(255,255,255,0.7)', color: T.lavenderInk,
+                width: 36, height: 36, borderRadius: 12, border: 'none',
+                background: '#fff',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', flexShrink: 0,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
               }}
             >
-              <Icon name="pencil" size={16} stroke={2.2} />
+              <Icon name="pencil" size={16} stroke={2.4} color={T.ink2} />
             </button>
           </div>
         )}
@@ -273,7 +260,7 @@ export function SettingsPage({
 
       {googleEmail ? (
         /* ── 已連結：緊湊同步狀態卡（對齊原型） ── */
-        <div style={{ background: T.card, borderRadius: T.r.lg, padding: '14px 16px', boxShadow: T.shadow.card }}>
+        <div style={{ background: T.card, borderRadius: 22, padding: '14px 16px', boxShadow: T.shadow.card }}>
           {/* 帳號 + 同步按鈕 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{
@@ -395,7 +382,7 @@ export function SettingsPage({
         </div>
       ) : (
         /* ── 未連結：登入引導 ── */
-        <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
+        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
           <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
             <div style={{ width: 60, height: 60, borderRadius: 20, background: T.mintSoft, color: T.mintInk, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="cloud" size={30} stroke={1.8} />
@@ -428,15 +415,20 @@ export function SettingsPage({
       {/* 類別管理 */}
       <div>
         <SectionLabel label="類別管理" />
-        <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
+        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
           <SettingRow
             icon="arrow-up" iconBg={T.mintSoft} iconColor={T.mintInk}
-            title="收入類別" subtitle="點選管理現金、刷卡、外送等收入來源"
+            title="收入類別" subtitle="現金、刷卡、Uber Eats、foodpanda"
             onClick={onNavigateCategories}
           />
           <SettingRow
             icon="arrow-down" iconBg={T.coralSoft} iconColor={T.coralInk}
-            title="支出類別" subtitle="點選管理食材、薪資、雜支等支出項目"
+            title="支出類別" subtitle="食材、薪資、雜支"
+            onClick={onNavigateCategories}
+          />
+          <SettingRow
+            icon="package" iconBg="#E8E0F8" iconColor="#5B3DA8"
+            title="外送平台費率" subtitle="Uber 30% · foodpanda 35%"
             onClick={onNavigateCategories} last
           />
         </div>
@@ -445,7 +437,7 @@ export function SettingsPage({
       {/* 應用程式（對齊原型） */}
       <div>
         <SectionLabel label="應用程式" />
-        <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
+        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
           <SettingRow
             icon="cloud" iconBg={T.skySoft} iconColor={T.skyInk}
             title="自動同步" subtitle="每筆變更即時上傳"
@@ -467,22 +459,15 @@ export function SettingsPage({
       {/* 資料（對齊原型） */}
       <div>
         <SectionLabel label="資料" />
-        <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
+        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
           <SettingRow
             icon="receipt" iconBg={T.lavenderSoft} iconColor={T.lavenderInk}
             title="匯出對帳單" subtitle="PDF / CSV / Google Sheets"
           />
           <SettingRow
-            icon="receipt" iconBg={T.lavenderSoft} iconColor={T.lavenderInk}
-            title="隱私政策與條款"
-            right={
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <a href="/Ready-mPOS/privacy.html" target="_blank" rel="noopener noreferrer" style={{ color: T.skyInk, textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>隱私政策</a>
-                <span style={{ color: T.muted, fontSize: 12 }}>·</span>
-                <a href="/Ready-mPOS/terms.html" target="_blank" rel="noopener noreferrer" style={{ color: T.skyInk, textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>條款</a>
-              </div>
-            }
-            last
+            icon="cloud-check" iconBg={T.mintSoft} iconColor={T.mintInk}
+            title="本地備份" subtitle="IndexedDB · 本機儲存"
+            right={null} last
           />
         </div>
       </div>
