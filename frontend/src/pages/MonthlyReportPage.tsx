@@ -1,12 +1,18 @@
 import { useRef, useState } from 'react'
-import { T } from '../lib/tokens'
+import { T, colorMap } from '../lib/tokens'
 import { fmt } from '../lib/fmt'
 import { Icon } from '../components/Icon'
 import { useMonthlyRecords } from '../hooks/useMonthlyRecords'
+import { getCategories, calcFees } from '../lib/categories'
 import type { DailyRecord } from '../types'
 
-function dayIncome(r: DailyRecord)  { return r.cashIncome + r.cardIncome + r.uberEatsIncome + r.pandaIncome }
-function dayExpense(r: DailyRecord) { return r.foodCost + r.staffSalary + r.miscExpense }
+// 加總 incomes / expenses — 只計已知類別 ID，避免 Sheets 同步帶入的陌生欄位虛增金額
+function dayIncome(r: DailyRecord, ids: Set<string>)  {
+  return [...ids].reduce((s, id) => s + (r.incomes?.[id]  ?? 0), 0)
+}
+function dayExpense(r: DailyRecord, ids: Set<string>) {
+  return [...ids].reduce((s, id) => s + (r.expenses?.[id] ?? 0), 0)
+}
 
 function toMonthString(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -18,13 +24,13 @@ function formatMonthLabel(m: string) {
 }
 
 // SVG 趨勢雙折線圖
-function TrendChart({ records }: { records: DailyRecord[] }) {
+function TrendChart({ records, incomeIds, expenseIds }: { records: DailyRecord[]; incomeIds: Set<string>; expenseIds: Set<string> }) {
   const W = 340, H = 140, PAD = 10
   if (records.length === 0) return null
 
   const days = records.map(r => ({
-    income:  dayIncome(r),
-    expense: dayExpense(r),
+    income:  dayIncome(r, incomeIds),
+    expense: dayExpense(r, expenseIds),
     day:     parseInt(r.date.slice(8)),
   }))
 
@@ -100,35 +106,71 @@ function TrendChart({ records }: { records: DailyRecord[] }) {
   )
 }
 
-// 分類橫條圖
+// 分類橫條圖（動態類別，收入/支出分組）
 function CategoryBars({ records }: { records: DailyRecord[] }) {
-  const cats = [
-    { l: '現金',      v: records.reduce((s, r) => s + r.cashIncome,     0), c: T.mint      },
-    { l: '刷卡',      v: records.reduce((s, r) => s + r.cardIncome,     0), c: T.sky       },
-    { l: 'Uber Eats', v: records.reduce((s, r) => s + r.uberEatsIncome, 0), c: T.uber      },
-    { l: 'foodpanda', v: records.reduce((s, r) => s + r.pandaIncome,    0), c: T.panda     },
-    { l: '食材',      v: records.reduce((s, r) => s + r.foodCost,       0), c: T.peach     },
-    { l: '薪資',      v: records.reduce((s, r) => s + r.staffSalary,    0), c: T.lavender  },
-    { l: '雜支',      v: records.reduce((s, r) => s + r.miscExpense,    0), c: T.coral     },
-  ]
-  const maxV = Math.max(...cats.map(c => c.v), 1)
+  const allCats = getCategories()
+  const buildGroup = (type: 'income' | 'expense') => {
+    const items = allCats
+      .filter(cat => cat.type === type)
+      .map(cat => ({
+        l: cat.name,
+        v: records.reduce((s, r) => {
+          const map = type === 'income' ? (r.incomes ?? {}) : (r.expenses ?? {})
+          return s + (map[cat.id] ?? 0)
+        }, 0),
+        c: (colorMap[cat.color] ?? colorMap['mint']).bg,
+      }))
+      .filter(c => c.v > 0)
+    const total = items.reduce((s, c) => s + c.v, 0)
+    return { items, total }
+  }
+
+  const income  = buildGroup('income')
+  const expense = buildGroup('expense')
+
+  if (income.items.length === 0 && expense.items.length === 0) return null
+
+  const renderGroup = (
+    title: string,
+    items: { l: string; v: number; c: string }[],
+    total: number,
+    totalColor: string,
+  ) => {
+    if (items.length === 0) return null
+    return (
+      <>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.4, textTransform: 'uppercase' as const }}>{title}</span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: totalColor, fontFamily: T.font.num }}>{fmt(total)}</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+          {items.map(c => {
+            const pct = total > 0 ? Math.round((c.v / total) * 100) : 0
+            return (
+              <div key={c.l}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, color: T.ink2, fontWeight: 700 }}>{c.l}</span>
+                  <span style={{ fontSize: 12, fontWeight: 800 }}>
+                    <span style={{ color: T.muted, fontFamily: T.font.num, fontWeight: 700, marginRight: 6 }}>{pct}%</span>
+                    <span style={{ color: T.ink, fontFamily: T.font.num }}>{fmt(c.v)}</span>
+                  </span>
+                </div>
+                <div style={{ height: 8, borderRadius: 4, background: T.bg, overflow: 'hidden' }}>
+                  <div style={{ width: `${Math.max(pct, c.v > 0 ? 1.5 : 0)}%`, height: '100%', background: c.c, borderRadius: 4, transition: 'width 400ms ease' }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </>
+    )
+  }
 
   return (
     <div style={{ background: T.card, borderRadius: T.r.lg, padding: 18, boxShadow: T.shadow.card }}>
       <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 14 }}>本月分類</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {cats.map(c => (
-          <div key={c.l}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ fontSize: 12, color: T.ink2, fontWeight: 700 }}>{c.l}</span>
-              <span style={{ fontSize: 12, color: T.ink, fontWeight: 800, fontFamily: T.font.num }}>{fmt(c.v)}</span>
-            </div>
-            <div style={{ height: 8, borderRadius: 4, background: T.bg, overflow: 'hidden' }}>
-              <div style={{ width: `${(c.v / maxV) * 100}%`, height: '100%', background: c.c, borderRadius: 4, transition: 'width 400ms ease' }} />
-            </div>
-          </div>
-        ))}
-      </div>
+      {renderGroup('收入', income.items, income.total, T.mintInk)}
+      {renderGroup('支出', expense.items, expense.total, T.coralInk)}
     </div>
   )
 }
@@ -143,10 +185,14 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
   const monthInputRef = useRef<HTMLInputElement>(null)
   const { records, loading } = useMonthlyRecords(month)
 
-  const totalIncome  = records.reduce((s, r) => s + dayIncome(r),  0)
-  const totalExpense = records.reduce((s, r) => s + dayExpense(r), 0)
-  const net          = totalIncome - totalExpense
-  const avgDaily     = records.length > 0 ? Math.round(net / records.length) : 0
+  const allCategories  = getCategories()
+  const knownIncomeIds  = new Set(allCategories.filter(c => c.type === 'income').map(c => c.id))
+  const knownExpenseIds = new Set(allCategories.filter(c => c.type === 'expense').map(c => c.id))
+  const totalIncome    = records.reduce((s, r) => s + dayIncome(r, knownIncomeIds),   0)
+  const totalExpense   = records.reduce((s, r) => s + dayExpense(r, knownExpenseIds), 0)
+  const totalFees      = records.reduce((s, r) => s + calcFees(r, allCategories), 0)
+  const net           = totalIncome - totalExpense - totalFees
+  const avgDaily      = records.length > 0 ? Math.round(net / records.length) : 0
 
   return (
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -257,7 +303,7 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
 
           {view === 'chart' ? (
             <>
-              <TrendChart records={records} />
+              <TrendChart records={records} incomeIds={knownIncomeIds} expenseIds={knownExpenseIds} />
               <CategoryBars records={records} />
             </>
           ) : (
@@ -272,9 +318,9 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
               </div>
 
               {[...records].reverse().map(r => {
-                const inc = dayIncome(r)
-                const exp = dayExpense(r)
-                const rowNet = inc - exp
+                const inc = dayIncome(r, knownIncomeIds)
+                const exp = dayExpense(r, knownExpenseIds)
+                const rowNet = inc - exp - calcFees(r, allCategories)
                 const day = parseInt(r.date.slice(8))
                 return (
                   <button
@@ -322,18 +368,6 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
             </div>
           )}
 
-          {/* 匯出按鈕（stub） */}
-          <button
-            style={{
-              padding: 14, borderRadius: T.r.md, border: 'none',
-              background: T.card, boxShadow: T.shadow.card,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              fontSize: 14, fontWeight: 700, color: T.ink, cursor: 'pointer', fontFamily: T.font.sans,
-            }}
-          >
-            <Icon name="cloud" size={16} stroke={2.4} color={T.lavenderInk} />
-            匯出 PDF / 同步 Google Sheets
-          </button>
         </>
       )}
     </div>

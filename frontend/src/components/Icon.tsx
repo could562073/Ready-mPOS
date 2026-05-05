@@ -40,6 +40,7 @@ export function Icon({ name, size = 20, color = 'currentColor', stroke = 2, clas
     case 'sparkle':     return <svg {...props}><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5z"/></svg>;
     case 'receipt':     return <svg {...props}><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 1 2V2H4z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>;
     case 'trend-up':    return <svg {...props}><path d="M23 6l-9.5 9.5-5-5L1 18M17 6h6v6"/></svg>;
+    case 'trend-down':  return <svg {...props}><path d="M23 18l-9.5-9.5-5 5L1 6M17 18h6v-6"/></svg>;
     case 'wallet':      return <svg {...props}><path d="M21 12V7H5a2 2 0 010-4h14v4"/><path d="M3 5v14a2 2 0 002 2h16v-5"/><path d="M18 12a2 2 0 100 4h4v-4h-4z"/></svg>;
     case 'sync':        return <svg {...props}><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>;
     case 'x':           return <svg {...props}><path d="M18 6L6 18M6 6l12 12"/></svg>;

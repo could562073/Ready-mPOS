@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { T } from '../lib/tokens'
 import { Icon } from '../components/Icon'
+import { db } from '../db'
 
 interface Props {
   syncing: boolean
@@ -15,6 +16,7 @@ interface Props {
   onRestore: () => void
   onClearLocal: () => Promise<void>
   onSetCustomSheet: (id: string, name: string) => void
+  onNavigateCategories: () => void
 }
 
 // 通用設定列元件（對齊原型 SettingRow）
@@ -88,7 +90,7 @@ export function SettingsPage({
   syncing, onSync,
   googleEmail, onSignIn, onSignOut, signInError, isConfigured, creating,
   restoring, onRestore, onClearLocal,
-  onSetCustomSheet,
+  onSetCustomSheet, onNavigateCategories,
 }: Props) {
   const [signingIn,    setSigningIn]    = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -97,6 +99,34 @@ export function SettingsPage({
   const [customSaved,  setCustomSaved]  = useState(false)
   const [autoSync,     setAutoSync]     = useState(true)
   const [reminder,     setReminder]     = useState(true)
+
+  // 店家身份
+  const [restaurantName, setRestaurantName] = useState(() => localStorage.getItem('mpos_restaurant_name') || '我的餐廳')
+  const [ownerName,      setOwnerName]      = useState(() => localStorage.getItem('mpos_owner_name') || '')
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [draftName,      setDraftName]      = useState('')
+  const [draftOwner,     setDraftOwner]     = useState('')
+  const [recordCount,    setRecordCount]    = useState(0)
+
+  useEffect(() => {
+    db.dailyRecords.count().then(setRecordCount)
+  }, [])
+
+  const handleEditProfile = () => {
+    setDraftName(restaurantName)
+    setDraftOwner(ownerName)
+    setEditingProfile(true)
+  }
+
+  const handleSaveProfile = () => {
+    const name = draftName.trim() || '我的餐廳'
+    const owner = draftOwner.trim()
+    setRestaurantName(name)
+    setOwnerName(owner)
+    localStorage.setItem('mpos_restaurant_name', name)
+    localStorage.setItem('mpos_owner_name', owner)
+    setEditingProfile(false)
+  }
 
   const handleSignIn = async () => {
     setSigningIn(true)
@@ -131,22 +161,89 @@ export function SettingsPage({
 
       {/* 店家身份卡 */}
       <div style={{
-        padding: 18, borderRadius: T.r.xl,
+        padding: 18, borderRadius: 24,
         background: `linear-gradient(135deg, ${T.lavenderSoft} 0%, ${T.skySoft} 100%)`,
-        display: 'flex', alignItems: 'center', gap: 14,
       }}>
-        <div style={{
-          width: 56, height: 56, borderRadius: 18, background: '#fff', color: T.lavenderInk,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 24, fontWeight: 800, fontFamily: T.font.num,
-          boxShadow: '0 4px 12px rgba(155,138,251,0.24)',
-        }}>店</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>我的餐廳</div>
-          <div style={{ fontSize: 12, color: T.ink2, fontWeight: 600, marginTop: 2 }}>
-            {googleEmail ? '已連結 Google 帳號' : '連結 Google 帳號以啟用雲端備份'}
+        {editingProfile ? (
+          /* 編輯模式 */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.ink2, marginBottom: 2 }}>編輯店家資訊</div>
+            <input
+              value={draftName}
+              onChange={e => setDraftName(e.target.value)}
+              placeholder="餐廳 / 店家名稱"
+              autoFocus
+              style={{
+                padding: '10px 14px', borderRadius: T.r.md,
+                border: `1.5px solid ${T.lavender}`, outline: 'none',
+                fontSize: 14, fontWeight: 700, color: T.ink,
+                fontFamily: T.font.sans, background: '#fff',
+              }}
+            />
+            <input
+              value={draftOwner}
+              onChange={e => setDraftOwner(e.target.value)}
+              placeholder="老闆姓名（選填）"
+              style={{
+                padding: '10px 14px', borderRadius: T.r.md,
+                border: `1.5px solid ${T.hairline}`, outline: 'none',
+                fontSize: 14, color: T.ink,
+                fontFamily: T.font.sans, background: '#fff',
+              }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => setEditingProfile(false)}
+                style={{
+                  flex: 1, padding: '10px 0', borderRadius: T.r.md,
+                  border: `1.5px solid ${T.hairline}`, background: 'transparent',
+                  fontSize: 13, fontWeight: 700, color: T.ink2, cursor: 'pointer', fontFamily: T.font.sans,
+                }}
+              >取消</button>
+              <button
+                onClick={handleSaveProfile}
+                style={{
+                  flex: 2, padding: '10px 0', borderRadius: T.r.md,
+                  border: 'none', background: T.lavender,
+                  fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: T.font.sans,
+                }}
+              >儲存</button>
+            </div>
           </div>
-        </div>
+        ) : (
+          /* 顯示模式 */
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{
+              width: 56, height: 56, borderRadius: 18, background: '#fff', color: T.lavenderInk,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 22, fontWeight: 800,
+              boxShadow: '0 4px 12px rgba(155,138,251,0.24)',
+              flexShrink: 0,
+            }}>
+              {restaurantName.slice(0, 1)}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {restaurantName}
+              </div>
+              <div style={{ fontSize: 12, color: T.ink2, fontWeight: 600, marginTop: 2 }}>
+                已記帳 {recordCount} 天{ownerName ? ` · 老闆 ${ownerName}` : ''}
+              </div>
+            </div>
+            <button
+              onClick={handleEditProfile}
+              style={{
+                width: 36, height: 36, borderRadius: 12, border: 'none',
+                background: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', flexShrink: 0,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+              }}
+            >
+              <Icon name="pencil" size={16} stroke={2.4} color={T.ink2} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 錯誤提示 */}
@@ -161,9 +258,56 @@ export function SettingsPage({
         </div>
       )}
 
-      {googleEmail ? (
+      {/* 類別管理 */}
+      <div>
+        <SectionLabel label="類別管理" />
+        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
+          <SettingRow
+            icon="arrow-up" iconBg={T.mintSoft} iconColor={T.mintInk}
+            title="收入類別" subtitle="現金、刷卡、Uber Eats、foodpanda"
+            onClick={onNavigateCategories}
+          />
+          <SettingRow
+            icon="arrow-down" iconBg={T.coralSoft} iconColor={T.coralInk}
+            title="支出類別" subtitle="食材、薪資、雜支"
+            onClick={onNavigateCategories}
+          />
+          <SettingRow
+            icon="package" iconBg="#E8E0F8" iconColor="#5B3DA8"
+            title="外送平台費率" subtitle="Uber 30% · foodpanda 35%"
+            onClick={onNavigateCategories} last
+          />
+        </div>
+      </div>
+
+      {/* 應用程式 */}
+      <div>
+        <SectionLabel label="應用程式" />
+        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
+          <SettingRow
+            icon="cloud" iconBg={T.skySoft} iconColor={T.skyInk}
+            title="自動同步" subtitle="每筆變更即時上傳"
+            right={<Toggle on={autoSync} onChange={setAutoSync} />}
+          />
+          <SettingRow
+            icon="sparkle" iconBg={T.sunSoft} iconColor={T.sunInk}
+            title="打烊提醒" subtitle="每晚 22:30 提醒記帳"
+            right={<Toggle on={reminder} onChange={setReminder} />}
+          />
+          <SettingRow
+            icon="camera" iconBg={T.peachSoft} iconColor={T.peachInk}
+            title="發票 OCR 辨識" subtitle="拍照自動填入金額"
+            right={null} last
+          />
+        </div>
+      </div>
+
+      {/* 資料 — 含 Google Sheets 同步 */}
+      <div>
+        <SectionLabel label="資料" />
+        {googleEmail ? (
         /* ── 已連結：緊湊同步狀態卡（對齊原型） ── */
-        <div style={{ background: T.card, borderRadius: T.r.lg, padding: '14px 16px', boxShadow: T.shadow.card }}>
+        <div style={{ background: T.card, borderRadius: 22, padding: '14px 16px', boxShadow: T.shadow.card }}>
           {/* 帳號 + 同步按鈕 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{
@@ -285,7 +429,7 @@ export function SettingsPage({
         </div>
       ) : (
         /* ── 未連結：登入引導 ── */
-        <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
+        <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
           <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
             <div style={{ width: 60, height: 60, borderRadius: 20, background: T.mintSoft, color: T.mintInk, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="cloud" size={30} stroke={1.8} />
@@ -313,73 +457,7 @@ export function SettingsPage({
             </button>
           </div>
         </div>
-      )}
-
-      {/* 類別管理（對齊原型） */}
-      <div>
-        <SectionLabel label="類別管理" />
-        <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
-          <SettingRow
-            icon="arrow-up" iconBg={T.mintSoft} iconColor={T.mintInk}
-            title="收入類別" subtitle="現金、刷卡、Uber Eats、foodpanda"
-            right={null}
-          />
-          <SettingRow
-            icon="arrow-down" iconBg={T.coralSoft} iconColor={T.coralInk}
-            title="支出類別" subtitle="食材、薪資、雜支"
-            right={null}
-          />
-          <SettingRow
-            icon="package" iconBg={T.uberSoft} iconColor={T.uberInk}
-            title="外送平台費率" subtitle="Uber Eats 30%・foodpanda 35%"
-            right={null} last
-          />
-        </div>
-      </div>
-
-      {/* 應用程式（對齊原型） */}
-      <div>
-        <SectionLabel label="應用程式" />
-        <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
-          <SettingRow
-            icon="cloud" iconBg={T.skySoft} iconColor={T.skyInk}
-            title="自動同步" subtitle="每筆變更即時上傳"
-            right={<Toggle on={autoSync} onChange={setAutoSync} />}
-          />
-          <SettingRow
-            icon="sparkle" iconBg={T.sunSoft} iconColor={T.sunInk}
-            title="打烊提醒" subtitle="每晚 22:30 提醒記帳"
-            right={<Toggle on={reminder} onChange={setReminder} />}
-          />
-          <SettingRow
-            icon="camera" iconBg={T.peachSoft} iconColor={T.peachInk}
-            title="發票 OCR 辨識" subtitle="拍照自動填入金額"
-            right={null} last
-          />
-        </div>
-      </div>
-
-      {/* 資料（對齊原型） */}
-      <div>
-        <SectionLabel label="資料" />
-        <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
-          <SettingRow
-            icon="receipt" iconBg={T.lavenderSoft} iconColor={T.lavenderInk}
-            title="匯出對帳單" subtitle="PDF / CSV / Google Sheets"
-          />
-          <SettingRow
-            icon="receipt" iconBg={T.lavenderSoft} iconColor={T.lavenderInk}
-            title="隱私政策與條款"
-            right={
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <a href="/Ready-mPOS/privacy.html" target="_blank" rel="noopener noreferrer" style={{ color: T.skyInk, textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>隱私政策</a>
-                <span style={{ color: T.muted, fontSize: 12 }}>·</span>
-                <a href="/Ready-mPOS/terms.html" target="_blank" rel="noopener noreferrer" style={{ color: T.skyInk, textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>條款</a>
-              </div>
-            }
-            last
-          />
-        </div>
+        )}
       </div>
 
       <div style={{ textAlign: 'center', fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 8 }}>

@@ -3,12 +3,14 @@ import { DashboardPage } from './pages/DashboardPage'
 import { DailyEntryPage } from './pages/DailyEntryPage'
 import { MonthlyReportPage } from './pages/MonthlyReportPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { CategoriesPage } from './pages/CategoriesPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { Icon } from './components/Icon'
 import { T } from './lib/tokens'
 import { useSyncService } from './hooks/useSyncService'
 
 type Tab = 'dashboard' | 'daily' | 'monthly' | 'settings'
+type SubPage = 'categories' | null
 
 function toLocalDateString(d: Date): string {
   const y = d.getFullYear()
@@ -30,8 +32,10 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(
     () => !localStorage.getItem('mpos_onboarded')
   )
+  const [subPage, setSubPage] = useState<SubPage>(null)
+
   const {
-    syncing, syncAll,
+    syncing, syncAll, syncCategories,
     googleEmail, signIn, signOut, signInError, creating,
     restoring, restoreFromSheets,
     clearLocalData,
@@ -78,7 +82,7 @@ function App() {
         {tab === 'monthly' && (
           <MonthlyReportPage onSelectDate={handleSelectDate} />
         )}
-        {tab === 'settings' && (
+        {tab === 'settings' && subPage === null && (
           <SettingsPage
             syncing={syncing}
             onSync={syncAll}
@@ -92,6 +96,14 @@ function App() {
             onRestore={restoreFromSheets}
             onClearLocal={clearLocalData}
             onSetCustomSheet={setCustomSheet}
+            onNavigateCategories={() => setSubPage('categories')}
+          />
+        )}
+        {tab === 'settings' && subPage === 'categories' && (
+          <CategoriesPage
+            onBack={() => setSubPage(null)}
+            googleEmail={googleEmail}
+            onSyncCategories={syncCategories}
           />
         )}
       </div>

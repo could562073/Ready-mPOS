@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { T, PLATFORM_FEES, incomeColors, expenseColors } from '../lib/tokens'
+import { T, colorMap } from '../lib/tokens'
 import { fmt } from '../lib/fmt'
 import { Icon } from '../components/Icon'
 import { useDailyRecord } from '../hooks/useDailyRecord'
+import { getCategories, saveCategories } from '../lib/categories'
+import { EditSheet, EMPTY_INCOME_DRAFT, EMPTY_EXPENSE_DRAFT } from '../components/CategoryEditSheet'
+import type { DraftCategory } from '../components/CategoryEditSheet'
 import type { TokenColor } from '../lib/tokens'
 
 interface DailyEntryPageProps {
@@ -11,20 +14,6 @@ interface DailyEntryPageProps {
   onSync?: () => void
   syncing?: boolean
 }
-
-// 表單欄位設定
-const INCOME_FIELDS = [
-  { key: 'cashIncome',     label: '現金收入',   icon: 'cash',    color: incomeColors.cash,  sublabel: null                   },
-  { key: 'cardIncome',     label: '刷卡收入',   icon: 'card',    color: incomeColors.card,  sublabel: null                   },
-  { key: 'uberEatsIncome', label: 'Uber Eats',  icon: 'bike',    color: incomeColors.uber,  sublabel: '自動扣 30% 平台手續費' },
-  { key: 'pandaIncome',    label: 'foodpanda',  icon: 'package', color: incomeColors.panda, sublabel: '自動扣 35% 平台手續費' },
-] as const
-
-const EXPENSE_FIELDS = [
-  { key: 'foodCost',    label: '食材採購', icon: 'package', color: expenseColors.food },
-  { key: 'staffSalary', label: '員工薪資', icon: 'users',   color: expenseColors.wage },
-  { key: 'miscExpense', label: '雜支',     icon: 'tag',     color: expenseColors.misc },
-] as const
 
 // 單一金額輸入欄
 function AmountField({
@@ -93,81 +82,93 @@ function AmountField({
   )
 }
 
-// 格式化日期標籤
 function formatDateLabel(dateStr: string) {
   const d = new Date(dateStr + 'T00:00:00')
   const DOW = ['週日','週一','週二','週三','週四','週五','週六'][d.getDay()]
   return `${d.getMonth() + 1}月${d.getDate()}日 · ${DOW}`
 }
 
+// 取備用顏色（colorMap 找不到時 fallback）
+const FALLBACK_COLOR: TokenColor = { bg: T.lavender, soft: T.lavenderSoft, ink: T.lavenderInk }
+
 export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEntryPageProps) {
   const { record, loading, save } = useDailyRecord(date)
 
-  const [cashIncome,     setCashIncome]     = useState(0)
-  const [cardIncome,     setCardIncome]     = useState(0)
-  const [uberEatsIncome, setUberEatsIncome] = useState(0)
-  const [pandaIncome,    setPandaIncome]    = useState(0)
-  const [foodCost,       setFoodCost]       = useState(0)
-  const [staffSalary,    setStaffSalary]    = useState(0)
-  const [miscExpense,    setMiscExpense]    = useState(0)
-  const [notes,          setNotes]          = useState('')
-  const [saved,    setSaved]    = useState(false)
-  const [focusKey, setFocusKey] = useState<string | null>(null)
+  // 以 state 持有類別清單，新增類別後可即時刷新表單欄位
+  const [allCats, setAllCats] = useState(() => getCategories())
+  const incomeCategories  = allCats.filter(c => c.type === 'income'  && c.enabled)
+  const expenseCategories = allCats.filter(c => c.type === 'expense' && c.enabled)
+
+  // 新增類別 sheet：'income' | 'expense' | null
+  const [addingType, setAddingType] = useState<'income' | 'expense' | null>(null)
+
+  // 收支金額 map：key = category.id
+  const [incomes,      setIncomes]      = useState<Record<string, number>>({})
+  const [expenses,     setExpenses]     = useState<Record<string, number>>({})
+  const [notes,        setNotes]        = useState('')
+  const [saved,        setSaved]        = useState(false)
+  const [showConfirm,  setShowConfirm]  = useState(false)
+  const [focusKey,     setFocusKey]     = useState<string | null>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
 
   // 載入既有紀錄填入表單
-  // deps 包含 record：useLiveQuery 在切換日期時可能短暫保留舊資料（不立刻回傳 undefined），
-  // 若只依賴 [date, loading] 會在 loading 未改變時用舊日期資料填入新日期表單
   useEffect(() => {
     if (loading) return
-    // 守衛：record 仍是上一個日期的 stale 資料，等真正的 query 解析完再填入
     if (record && record.date !== date) return
     if (record) {
-      setCashIncome(record.cashIncome)
-      setCardIncome(record.cardIncome)
-      setUberEatsIncome(record.uberEatsIncome)
-      setPandaIncome(record.pandaIncome)
-      setFoodCost(record.foodCost)
-      setStaffSalary(record.staffSalary)
-      setMiscExpense(record.miscExpense)
+      setIncomes({ ...record.incomes })
+      setExpenses({ ...record.expenses })
       setNotes(record.notes ?? '')
     } else {
-      setCashIncome(0); setCardIncome(0); setUberEatsIncome(0); setPandaIncome(0)
-      setFoodCost(0); setStaffSalary(0); setMiscExpense(0); setNotes('')
+      setIncomes({})
+      setExpenses({})
+      setNotes('')
     }
     setSaved(false)
   }, [date, record, loading])
 
-  const totalIncome  = cashIncome + cardIncome + uberEatsIncome + pandaIncome
-  const totalExpense = foodCost + staffSalary + miscExpense
+  const totalIncome  = incomeCategories.reduce((s, c) => s + (incomes[c.id] ?? 0), 0)
+  const totalExpense = expenseCategories.reduce((s, c) => s + (expenses[c.id] ?? 0), 0)
   const net          = totalIncome - totalExpense
-  const fees         = uberEatsIncome * PLATFORM_FEES.uber + pandaIncome * PLATFORM_FEES.panda
+
+  // 平台手續費：有 fee > 0 的收入類別
+  const fees = incomeCategories
+    .filter(c => c.fee && c.fee > 0)
+    .reduce((s, c) => s + (incomes[c.id] ?? 0) * c.fee!, 0)
   const netAfterFees = net - fees
 
   const handleSave = async () => {
-    await save({ cashIncome, cardIncome, uberEatsIncome, pandaIncome, foodCost, staffSalary, miscExpense, notes })
+    setShowConfirm(false)
+    await save({ incomes, expenses, notes })
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
     onSync?.()
   }
 
-  // 欄位值 map（方便統一渲染）
-  const incomeValues: Record<string, number> = { cashIncome, cardIncome, uberEatsIncome, pandaIncome }
-  const incomeSetters: Record<string, (v: number) => void> = {
-    cashIncome: setCashIncome, cardIncome: setCardIncome,
-    uberEatsIncome: setUberEatsIncome, pandaIncome: setPandaIncome,
+  const handleSaveClick = () => {
+    if (record) {
+      setShowConfirm(true)  // 更新既有紀錄前先確認
+    } else {
+      handleSave()
+    }
   }
-  const expenseValues: Record<string, number>  = { foodCost, staffSalary, miscExpense }
-  const expenseSetters: Record<string, (v: number) => void> = {
-    foodCost: setFoodCost, staffSalary: setStaffSalary, miscExpense: setMiscExpense,
+
+  // 新增類別後寫入 localStorage 並刷新本地 state
+  const handleCategoryAdd = (draft: DraftCategory) => {
+    const updated = [...allCats, { ...draft, id: draft.id || Date.now().toString(36) }]
+    saveCategories(updated)
+    setAllCats(updated)
+    setAddingType(null)
   }
+
+  // 日期格式化：2026-05-05 → 2026年5月5日
+  const [y, mo, d] = date.split('-')
+  const dateLabel = `${y}年${parseInt(mo)}月${parseInt(d)}日`
 
   return (
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* 日期選擇 + 自動儲存狀態 */}
+      {/* 日期選擇 + 同步狀態 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px' }}>
-        {/* onClick 呼叫 showPicker() 解決 desktop 必須點到隱藏日曆圖示才能開啟的問題 */}
-        {/* overlay input 保留讓 iOS 直接觸碰時能打開原生選擇器 */}
         <div
           style={{ position: 'relative', display: 'inline-block', cursor: 'pointer' }}
           onClick={() => { try { dateInputRef.current?.showPicker() } catch {} }}
@@ -225,22 +226,45 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
                 </div>
                 <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>收入</span>
               </div>
-              <span style={{ fontSize: 11, color: T.muted, fontWeight: 600 }}>4 個來源</span>
+              <span style={{ fontSize: 11, color: T.muted, fontWeight: 600 }}>
+                {incomeCategories.length} 個來源
+              </span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {INCOME_FIELDS.map(f => (
-                <AmountField
-                  key={f.key}
-                  icon={f.icon} label={f.label} sublabel={f.sublabel}
-                  color={f.color}
-                  value={incomeValues[f.key]}
-                  onChange={incomeSetters[f.key]}
-                  focused={focusKey === f.key}
-                  onFocus={() => setFocusKey(f.key)}
-                />
-              ))}
+              {incomeCategories.map(cat => {
+                const color = colorMap[cat.color] ?? FALLBACK_COLOR
+                const sublabel = cat.fee && cat.fee > 0
+                  ? `自動扣 ${Math.round(cat.fee * 100)}% 平台手續費`
+                  : null
+                return (
+                  <AmountField
+                    key={cat.id}
+                    icon={cat.icon} label={cat.name} sublabel={sublabel}
+                    color={color}
+                    value={incomes[cat.id] ?? 0}
+                    onChange={v => setIncomes(prev => ({ ...prev, [cat.id]: v }))}
+                    focused={focusKey === cat.id}
+                    onFocus={() => setFocusKey(cat.id)}
+                  />
+                )
+              })}
             </div>
+
+            <button
+              onClick={() => setAddingType('income')}
+              style={{
+                width: '100%', marginTop: 6, padding: '10px',
+                border: `1.5px dashed ${T.mint}`, borderRadius: 14,
+                background: 'transparent', cursor: 'pointer',
+                color: T.mint, fontSize: 13, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                fontFamily: T.font.sans,
+              }}
+            >
+              <Icon name="plus" size={14} stroke={2.6} />
+              新增收入來源
+            </button>
 
             {/* 收入小計 */}
             <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 14, background: T.mintSoft, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -260,7 +284,6 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
                 </div>
                 <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>支出</span>
               </div>
-              {/* 拍照記帳（stub） */}
               <button
                 style={{
                   display: 'flex', alignItems: 'center', gap: 4,
@@ -275,18 +298,36 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {EXPENSE_FIELDS.map(f => (
-                <AmountField
-                  key={f.key}
-                  icon={f.icon} label={f.label} sublabel={null}
-                  color={f.color}
-                  value={expenseValues[f.key]}
-                  onChange={expenseSetters[f.key]}
-                  focused={focusKey === f.key}
-                  onFocus={() => setFocusKey(f.key)}
-                />
-              ))}
+              {expenseCategories.map(cat => {
+                const color = colorMap[cat.color] ?? FALLBACK_COLOR
+                return (
+                  <AmountField
+                    key={cat.id}
+                    icon={cat.icon} label={cat.name} sublabel={null}
+                    color={color}
+                    value={expenses[cat.id] ?? 0}
+                    onChange={v => setExpenses(prev => ({ ...prev, [cat.id]: v }))}
+                    focused={focusKey === cat.id}
+                    onFocus={() => setFocusKey(cat.id)}
+                  />
+                )
+              })}
             </div>
+
+            <button
+              onClick={() => setAddingType('expense')}
+              style={{
+                width: '100%', marginTop: 6, padding: '10px',
+                border: `1.5px dashed ${T.coral}`, borderRadius: 14,
+                background: 'transparent', cursor: 'pointer',
+                color: T.coral, fontSize: 13, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                fontFamily: T.font.sans,
+              }}
+            >
+              <Icon name="plus" size={14} stroke={2.6} />
+              新增支出類別
+            </button>
 
             {/* 支出小計 */}
             <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 14, background: T.coralSoft, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -316,9 +357,9 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
             />
           </div>
 
-          {/* 儲存按鈕 */}
+          {/* 儲存 / 更新按鈕 */}
           <button
-            onClick={handleSave}
+            onClick={handleSaveClick}
             style={{
               width: '100%', padding: '16px', borderRadius: T.r.lg, border: 'none',
               background: saved ? T.mint : T.ink,
@@ -330,10 +371,60 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
                 : `0 8px 24px rgba(26,27,37,0.24)`,
             }}
           >
-            {saved ? '已儲存 ✓' : record ? '更新今日帳目' : '儲存今日帳目'}
+            {saved ? '已儲存 ✓' : record ? '更新帳目' : '儲存帳目'}
           </button>
 
-          {/* 當日淨額 summary 深色卡 */}
+          {/* 更新確認 modal */}
+          {showConfirm && (
+            <div
+              onClick={() => setShowConfirm(false)}
+              style={{
+                position: 'fixed', inset: 0, zIndex: 100,
+                background: 'rgba(0,0,0,0.4)',
+                display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                padding: '0 16px 32px',
+              }}
+            >
+              <div
+                onClick={e => e.stopPropagation()}
+                style={{
+                  width: '100%', maxWidth: 480,
+                  background: '#fff', borderRadius: 24, padding: 24,
+                  display: 'flex', flexDirection: 'column', gap: 16,
+                  boxShadow: '0 -4px 32px rgba(0,0,0,0.12)',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>確定更新帳目？</div>
+                  <div style={{ fontSize: 13, color: T.muted, fontWeight: 600, marginTop: 6 }}>
+                    更新到 {dateLabel}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    onClick={() => setShowConfirm(false)}
+                    style={{
+                      flex: 1, padding: '14px 0', borderRadius: T.r.md,
+                      border: `1.5px solid ${T.hairline}`, background: 'transparent',
+                      fontSize: 14, fontWeight: 700, color: T.ink2,
+                      cursor: 'pointer', fontFamily: T.font.sans,
+                    }}
+                  >取消</button>
+                  <button
+                    onClick={handleSave}
+                    style={{
+                      flex: 2, padding: '14px 0', borderRadius: T.r.md,
+                      border: 'none', background: T.ink,
+                      fontSize: 14, fontWeight: 800, color: '#fff',
+                      cursor: 'pointer', fontFamily: T.font.sans,
+                    }}
+                  >確定更新</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 當日淨額 summary 深色卡（已扣平台手續費） */}
           <div
             style={{
               background: T.ink, color: '#fff',
@@ -346,28 +437,43 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
               <span style={{ fontSize: 13, fontWeight: 700, opacity: 0.7 }}>當日淨額</span>
               <span style={{
                 fontSize: 30, fontWeight: 800, fontFamily: T.font.num, letterSpacing: -0.6,
-                color: net >= 0 ? '#4FE39D' : '#FF8E8E',
+                color: netAfterFees >= 0 ? '#4FE39D' : '#FF8E8E',
               }}>
-                {fmt(net, { plus: true, sign: true })}
+                {fmt(netAfterFees, { plus: true, sign: true })}
               </span>
             </div>
-            <div style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-              <div>
-                <div style={{ opacity: 0.55, fontWeight: 600, fontSize: 11 }}>外送平台分潤</div>
-                <div style={{ fontFamily: T.font.num, fontWeight: 700, marginTop: 2 }}>
-                  -{fmt(fees)}
+            {fees > 0 && (
+              <>
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                  <div>
+                    <div style={{ opacity: 0.55, fontWeight: 600, fontSize: 11 }}>收入毛額</div>
+                    <div style={{ fontFamily: T.font.num, fontWeight: 700, marginTop: 2 }}>
+                      {fmt(net, { plus: true, sign: true })}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ opacity: 0.55, fontWeight: 600, fontSize: 11 }}>外送平台分潤</div>
+                    <div style={{ fontFamily: T.font.num, fontWeight: 700, marginTop: 2, color: '#FF8E8E' }}>
+                      -{fmt(fees)}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ opacity: 0.55, fontWeight: 600, fontSize: 11 }}>實收淨額</div>
-                <div style={{ fontFamily: T.font.num, fontWeight: 700, marginTop: 2, color: '#4FE39D' }}>
-                  {fmt(netAfterFees, { plus: true, sign: true })}
-                </div>
-              </div>
-            </div>
+              </>
+            )}
           </div>
         </>
+      )}
+
+      {/* 新增類別 sheet（從記帳頁快速新增收入/支出來源） */}
+      {addingType && (
+        <EditSheet
+          draft={{ ...(addingType === 'income' ? EMPTY_INCOME_DRAFT : EMPTY_EXPENSE_DRAFT), id: Date.now().toString(36) }}
+          isNew
+          onSave={handleCategoryAdd}
+          onDelete={() => {}}
+          onClose={() => setAddingType(null)}
+        />
       )}
     </div>
   )
