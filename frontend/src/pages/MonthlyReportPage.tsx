@@ -1,12 +1,14 @@
 import { useRef, useState } from 'react'
-import { T } from '../lib/tokens'
+import { T, colorMap } from '../lib/tokens'
 import { fmt } from '../lib/fmt'
 import { Icon } from '../components/Icon'
 import { useMonthlyRecords } from '../hooks/useMonthlyRecords'
+import { getCategories } from '../lib/categories'
 import type { DailyRecord } from '../types'
 
-function dayIncome(r: DailyRecord)  { return r.cashIncome + r.cardIncome + r.uberEatsIncome + r.pandaIncome }
-function dayExpense(r: DailyRecord) { return r.foodCost + r.staffSalary + r.miscExpense }
+// 加總 incomes / expenses Record 的所有值
+function dayIncome(r: DailyRecord)  { return Object.values(r.incomes  ?? {}).reduce((s, v) => s + v, 0) }
+function dayExpense(r: DailyRecord) { return Object.values(r.expenses ?? {}).reduce((s, v) => s + v, 0) }
 
 function toMonthString(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -100,17 +102,18 @@ function TrendChart({ records }: { records: DailyRecord[] }) {
   )
 }
 
-// 分類橫條圖
+// 分類橫條圖（動態類別）
 function CategoryBars({ records }: { records: DailyRecord[] }) {
-  const cats = [
-    { l: '現金',      v: records.reduce((s, r) => s + r.cashIncome,     0), c: T.mint      },
-    { l: '刷卡',      v: records.reduce((s, r) => s + r.cardIncome,     0), c: T.sky       },
-    { l: 'Uber Eats', v: records.reduce((s, r) => s + r.uberEatsIncome, 0), c: T.uber      },
-    { l: 'foodpanda', v: records.reduce((s, r) => s + r.pandaIncome,    0), c: T.panda     },
-    { l: '食材',      v: records.reduce((s, r) => s + r.foodCost,       0), c: T.peach     },
-    { l: '薪資',      v: records.reduce((s, r) => s + r.staffSalary,    0), c: T.lavender  },
-    { l: '雜支',      v: records.reduce((s, r) => s + r.miscExpense,    0), c: T.coral     },
-  ]
+  const cats = getCategories()
+    .map(cat => ({
+      l: cat.name,
+      v: records.reduce((s, r) => {
+        const map = cat.type === 'income' ? (r.incomes ?? {}) : (r.expenses ?? {})
+        return s + (map[cat.id] ?? 0)
+      }, 0),
+      c: (colorMap[cat.color] ?? colorMap['mint']).bg,
+    }))
+    .filter(c => c.v > 0)
   const maxV = Math.max(...cats.map(c => c.v), 1)
 
   return (
