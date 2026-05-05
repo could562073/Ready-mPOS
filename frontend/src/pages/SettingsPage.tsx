@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { T } from '../lib/tokens'
 import { Icon } from '../components/Icon'
+import { db } from '../db'
 
 interface Props {
   syncing: boolean
@@ -99,6 +100,34 @@ export function SettingsPage({
   const [autoSync,     setAutoSync]     = useState(true)
   const [reminder,     setReminder]     = useState(true)
 
+  // 店家身份
+  const [restaurantName, setRestaurantName] = useState(() => localStorage.getItem('mpos_restaurant_name') || '我的餐廳')
+  const [ownerName,      setOwnerName]      = useState(() => localStorage.getItem('mpos_owner_name') || '')
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [draftName,      setDraftName]      = useState('')
+  const [draftOwner,     setDraftOwner]     = useState('')
+  const [recordCount,    setRecordCount]    = useState(0)
+
+  useEffect(() => {
+    db.dailyRecords.count().then(setRecordCount)
+  }, [])
+
+  const handleEditProfile = () => {
+    setDraftName(restaurantName)
+    setDraftOwner(ownerName)
+    setEditingProfile(true)
+  }
+
+  const handleSaveProfile = () => {
+    const name = draftName.trim() || '我的餐廳'
+    const owner = draftOwner.trim()
+    setRestaurantName(name)
+    setOwnerName(owner)
+    localStorage.setItem('mpos_restaurant_name', name)
+    localStorage.setItem('mpos_owner_name', owner)
+    setEditingProfile(false)
+  }
+
   const handleSignIn = async () => {
     setSigningIn(true)
     try { await onSignIn() } finally { setSigningIn(false) }
@@ -134,20 +163,100 @@ export function SettingsPage({
       <div style={{
         padding: 18, borderRadius: T.r.xl,
         background: `linear-gradient(135deg, ${T.lavenderSoft} 0%, ${T.skySoft} 100%)`,
-        display: 'flex', alignItems: 'center', gap: 14,
       }}>
-        <div style={{
-          width: 56, height: 56, borderRadius: 18, background: '#fff', color: T.lavenderInk,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 24, fontWeight: 800, fontFamily: T.font.num,
-          boxShadow: '0 4px 12px rgba(155,138,251,0.24)',
-        }}>店</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>我的餐廳</div>
-          <div style={{ fontSize: 12, color: T.ink2, fontWeight: 600, marginTop: 2 }}>
-            {googleEmail ? '已連結 Google 帳號' : '連結 Google 帳號以啟用雲端備份'}
+        {editingProfile ? (
+          /* 編輯模式 */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.ink2, marginBottom: 2 }}>編輯店家資訊</div>
+            <input
+              value={draftName}
+              onChange={e => setDraftName(e.target.value)}
+              placeholder="餐廳 / 店家名稱"
+              autoFocus
+              style={{
+                padding: '10px 14px', borderRadius: T.r.md,
+                border: `1.5px solid ${T.lavender}`, outline: 'none',
+                fontSize: 14, fontWeight: 700, color: T.ink,
+                fontFamily: T.font.sans, background: '#fff',
+              }}
+            />
+            <input
+              value={draftOwner}
+              onChange={e => setDraftOwner(e.target.value)}
+              placeholder="老闆姓名（選填）"
+              style={{
+                padding: '10px 14px', borderRadius: T.r.md,
+                border: `1.5px solid ${T.hairline}`, outline: 'none',
+                fontSize: 14, color: T.ink,
+                fontFamily: T.font.sans, background: '#fff',
+              }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => setEditingProfile(false)}
+                style={{
+                  flex: 1, padding: '10px 0', borderRadius: T.r.md,
+                  border: `1.5px solid ${T.hairline}`, background: 'transparent',
+                  fontSize: 13, fontWeight: 700, color: T.ink2, cursor: 'pointer', fontFamily: T.font.sans,
+                }}
+              >取消</button>
+              <button
+                onClick={handleSaveProfile}
+                style={{
+                  flex: 2, padding: '10px 0', borderRadius: T.r.md,
+                  border: 'none', background: T.lavender,
+                  fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: T.font.sans,
+                }}
+              >儲存</button>
+            </div>
           </div>
-        </div>
+        ) : (
+          /* 顯示模式 */
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{
+              width: 56, height: 56, borderRadius: 18, background: '#fff', color: T.lavenderInk,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 22, fontWeight: 800,
+              boxShadow: '0 4px 12px rgba(155,138,251,0.24)',
+              flexShrink: 0,
+            }}>
+              {restaurantName.slice(0, 1)}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {restaurantName}
+              </div>
+              {ownerName ? (
+                <div style={{ fontSize: 12, color: T.ink2, fontWeight: 600, marginTop: 2 }}>老闆：{ownerName}</div>
+              ) : (
+                <div style={{ fontSize: 12, color: T.muted, fontWeight: 600, marginTop: 2 }}>點右側鉛筆填入老闆姓名</div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '4px 10px', borderRadius: 999,
+                  background: 'rgba(255,255,255,0.7)',
+                }}>
+                  <Icon name="receipt" size={12} stroke={2.4} color={T.lavenderInk} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: T.lavenderInk }}>
+                    已記帳 {recordCount} 天
+                  </span>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={handleEditProfile}
+              style={{
+                width: 34, height: 34, borderRadius: 11, border: 'none',
+                background: 'rgba(255,255,255,0.7)', color: T.lavenderInk,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', flexShrink: 0,
+              }}
+            >
+              <Icon name="pencil" size={16} stroke={2.2} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 錯誤提示 */}

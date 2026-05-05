@@ -102,6 +102,7 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
 
   const DOW = ['週日','週一','週二','週三','週四','週五','週六'][today.getDay()]
   const dateLabel = `${today.getMonth() + 1}月${today.getDate()}日 · ${DOW}`
+  const ownerName = localStorage.getItem('mpos_owner_name') || ''
 
   return (
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -110,7 +111,7 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
         <div>
           <div style={{ fontSize: 13, color: T.muted, fontWeight: 600 }}>{dateLabel}</div>
           <div style={{ fontSize: 24, fontWeight: 800, color: T.ink, letterSpacing: -0.5, marginTop: 2 }}>
-            早安，老闆 👋
+            早安，{ownerName || '老闆'} 👋
           </div>
         </div>
         <div
