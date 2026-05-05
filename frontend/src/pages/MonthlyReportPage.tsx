@@ -6,9 +6,13 @@ import { useMonthlyRecords } from '../hooks/useMonthlyRecords'
 import { getCategories, calcFees } from '../lib/categories'
 import type { DailyRecord } from '../types'
 
-// 加總 incomes / expenses Record 的所有值
-function dayIncome(r: DailyRecord)  { return Object.values(r.incomes  ?? {}).reduce((s, v) => s + v, 0) }
-function dayExpense(r: DailyRecord) { return Object.values(r.expenses ?? {}).reduce((s, v) => s + v, 0) }
+// 加總 incomes / expenses — 只計已知類別 ID，避免 Sheets 同步帶入的陌生欄位虛增金額
+function dayIncome(r: DailyRecord, ids: Set<string>)  {
+  return [...ids].reduce((s, id) => s + (r.incomes?.[id]  ?? 0), 0)
+}
+function dayExpense(r: DailyRecord, ids: Set<string>) {
+  return [...ids].reduce((s, id) => s + (r.expenses?.[id] ?? 0), 0)
+}
 
 function toMonthString(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -20,13 +24,13 @@ function formatMonthLabel(m: string) {
 }
 
 // SVG 趨勢雙折線圖
-function TrendChart({ records }: { records: DailyRecord[] }) {
+function TrendChart({ records, incomeIds, expenseIds }: { records: DailyRecord[]; incomeIds: Set<string>; expenseIds: Set<string> }) {
   const W = 340, H = 140, PAD = 10
   if (records.length === 0) return null
 
   const days = records.map(r => ({
-    income:  dayIncome(r),
-    expense: dayExpense(r),
+    income:  dayIncome(r, incomeIds),
+    expense: dayExpense(r, expenseIds),
     day:     parseInt(r.date.slice(8)),
   }))
 
@@ -181,10 +185,12 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
   const monthInputRef = useRef<HTMLInputElement>(null)
   const { records, loading } = useMonthlyRecords(month)
 
-  const allCategories = getCategories()
-  const totalIncome   = records.reduce((s, r) => s + dayIncome(r),  0)
-  const totalExpense  = records.reduce((s, r) => s + dayExpense(r), 0)
-  const totalFees     = records.reduce((s, r) => s + calcFees(r, allCategories), 0)
+  const allCategories  = getCategories()
+  const knownIncomeIds  = new Set(allCategories.filter(c => c.type === 'income').map(c => c.id))
+  const knownExpenseIds = new Set(allCategories.filter(c => c.type === 'expense').map(c => c.id))
+  const totalIncome    = records.reduce((s, r) => s + dayIncome(r, knownIncomeIds),   0)
+  const totalExpense   = records.reduce((s, r) => s + dayExpense(r, knownExpenseIds), 0)
+  const totalFees      = records.reduce((s, r) => s + calcFees(r, allCategories), 0)
   const net           = totalIncome - totalExpense - totalFees
   const avgDaily      = records.length > 0 ? Math.round(net / records.length) : 0
 
@@ -297,7 +303,7 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
 
           {view === 'chart' ? (
             <>
-              <TrendChart records={records} />
+              <TrendChart records={records} incomeIds={knownIncomeIds} expenseIds={knownExpenseIds} />
               <CategoryBars records={records} />
             </>
           ) : (
@@ -312,8 +318,8 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
               </div>
 
               {[...records].reverse().map(r => {
-                const inc = dayIncome(r)
-                const exp = dayExpense(r)
+                const inc = dayIncome(r, knownIncomeIds)
+                const exp = dayExpense(r, knownExpenseIds)
                 const rowNet = inc - exp - calcFees(r, allCategories)
                 const day = parseInt(r.date.slice(8))
                 return (
