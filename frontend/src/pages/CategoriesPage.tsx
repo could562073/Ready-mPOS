@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { T, colorMap } from '../lib/tokens'
 import { Icon } from '../components/Icon'
 import { getCategories, saveCategories } from '../lib/categories'
@@ -84,6 +84,8 @@ function CategoryRow({ cat, onToggle, onEdit }: {
 export function CategoriesPage({ onBack, googleEmail, onSyncCategories }: Props) {
   const [categories, setCategories] = useState<Category[]>(() => getCategories())
   const [editTarget, setEditTarget] = useState<{ cat: DraftCategory; isNew: boolean } | null>(null)
+  // 記錄進入時的初始狀態，返回時只在有實際修改時才呼叫 Sheets 同步
+  const initialSnapshot = useRef(JSON.stringify(getCategories()))
 
   // 立即存入 localStorage；Sheets 同步延至返回時統一執行一次
   // 避免每次操作都呼叫 acquireToken，與 syncAll 並行導致 GIS 重複彈窗
@@ -129,7 +131,13 @@ export function CategoriesPage({ onBack, googleEmail, onSyncCategories }: Props)
         {/* 頂部標題列 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 0' }}>
           <button
-            onClick={() => { onSyncCategories(categories); onBack() }}
+            onClick={() => {
+              // 只在類別有實際修改時才同步，避免無謂的 token 請求觸發登入 popup
+              if (JSON.stringify(categories) !== initialSnapshot.current) {
+                onSyncCategories(categories)
+              }
+              onBack()
+            }}
             style={{
               width: 36, height: 36, borderRadius: 12, border: 'none',
               background: T.card, color: T.ink, cursor: 'pointer',

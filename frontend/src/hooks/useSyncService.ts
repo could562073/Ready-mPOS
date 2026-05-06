@@ -31,13 +31,21 @@ export function useSyncService() {
 
   // GIS script 非同步載入，輪詢直到 google.accounts 可用
   // 初始化後若已登入則靜默預取 token，把授權彈窗集中在啟動時，不在儲存/同步操作中途出現
+  // 每 50 分鐘自動靜默刷新，確保 token 不在使用中過期
   useEffect(() => {
+    let refreshTimer: ReturnType<typeof setInterval>
+
     const init = () => {
       initGoogleAuth()
       if (getSignedInEmail()) {
         warmToken().catch(() => {})
+        // 每 50 分鐘靜默刷新（token 壽命 60 分鐘，提前更新避免過期觸發 popup）
+        refreshTimer = setInterval(() => {
+          if (getSignedInEmail()) warmToken().catch(() => {})
+        }, 50 * 60 * 1000)
       }
     }
+
     if ((window as any).google?.accounts) {
       init()
     } else {
@@ -47,8 +55,9 @@ export function useSyncService() {
           init()
         }
       }, 300)
-      return () => clearInterval(id)
+      return () => { clearInterval(id); clearInterval(refreshTimer) }
     }
+    return () => clearInterval(refreshTimer)
   }, [])
 
   const syncAll = useCallback(async () => {

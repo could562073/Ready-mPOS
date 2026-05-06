@@ -34,16 +34,16 @@ interface TokenInfo {
   expires_at: number // epoch ms
 }
 
-// sessionStorage key — token 存活在同一瀏覽器 session，頁面重整後仍可沿用，不需重新彈窗
-const SS_TOKEN  = 'gsheets_tk'
-const SS_EXPIRY = 'gsheets_tk_exp'
+// localStorage key — token 跨 session 持久化，關掉瀏覽器重開仍有效，不需重新登入
+const LS_TOKEN  = 'gsheets_tk'
+const LS_EXPIRY = 'gsheets_tk_exp'
 
 let tokenClient: any = null
-// 嘗試從 sessionStorage 還原上次取得的 token
+// 嘗試從 localStorage 還原上次取得的 token
 let tokenInfo: TokenInfo | null = (() => {
   try {
-    const t = sessionStorage.getItem(SS_TOKEN)
-    const e = Number(sessionStorage.getItem(SS_EXPIRY))
+    const t = localStorage.getItem(LS_TOKEN)
+    const e = Number(localStorage.getItem(LS_EXPIRY))
     if (t && e && Date.now() < e) return { access_token: t, expires_at: e }
   } catch {}
   return null
@@ -64,10 +64,10 @@ export function initGoogleAuth(): void {
       } else {
         const expiresAt = Date.now() + ((resp.expires_in ?? 3600) - 60) * 1000
         tokenInfo = { access_token: resp.access_token, expires_at: expiresAt }
-        // 持久化到 sessionStorage，同 session 內頁面重整不需再授權
+        // 持久化到 localStorage，關掉瀏覽器重開仍有效，不需重新登入
         try {
-          sessionStorage.setItem(SS_TOKEN,  resp.access_token)
-          sessionStorage.setItem(SS_EXPIRY, String(expiresAt))
+          localStorage.setItem(LS_TOKEN,  resp.access_token)
+          localStorage.setItem(LS_EXPIRY, String(expiresAt))
         } catch {}
         pendingResolve?.(resp.access_token)
       }
@@ -118,8 +118,8 @@ export function signOut(): void {
     tokenInfo = null
   }
   try {
-    sessionStorage.removeItem(SS_TOKEN)
-    sessionStorage.removeItem(SS_EXPIRY)
+    localStorage.removeItem(LS_TOKEN)
+    localStorage.removeItem(LS_EXPIRY)
   } catch {}
   localStorage.removeItem(LS_EMAIL)
   // 試算表 ID 保留，下次登入同帳號可直接沿用
