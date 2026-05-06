@@ -235,6 +235,65 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
         <Icon name="chevron-r" size={18} color={T.muted} stroke={2.4} />
       </button>
 
+      {/* 近 7 天收入小圖 */}
+      <div style={{ padding: 18, borderRadius: T.r.lg, background: T.card, boxShadow: T.shadow.card }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, color: T.muted, fontWeight: 600 }}>近 7 天收入</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: T.font.num, letterSpacing: -0.4, marginTop: 2 }}>
+              {fmt(week7Income)}
+            </div>
+          </div>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '4px 8px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+            background: trendUp ? T.mintSoft : T.coralSoft,
+            color:      trendUp ? T.mintInk  : T.coralInk,
+          }}>
+            <Icon name={trendUp ? 'trend-up' : 'trend-down'} size={12} stroke={2.6} />
+            {trendPct === null ? '新紀錄' : `${trendPct >= 0 ? '+' : ''}${trendPct}%`}
+          </div>
+        </div>
+        <MiniBarChart bars={last7} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, color: T.muted, fontWeight: 600 }}>
+          {last7.map((b, i) => <span key={i}>{b.day}日</span>)}
+        </div>
+      </div>
+
+      {/* 本月淨額 + 今日成本率 */}
+      <div style={{ display: 'flex', gap: 10 }}>
+        {[
+          { label: '本月淨額',  value: fmt(mtdNet, { plus: true }), icon: 'wallet', soft: T.mintSoft,  ink: T.mintInk  },
+          { label: '今日成本率', value: `${costPct}%`,               icon: 'chart',  soft: T.peachSoft, ink: T.peachInk },
+        ].map(stat => (
+          <div key={stat.label} style={{ flex: 1, padding: '14px 16px', borderRadius: T.r.lg, background: T.card, boxShadow: T.shadow.card, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 24, height: 24, borderRadius: 8, background: stat.soft, color: stat.ink, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name={stat.icon} size={14} stroke={2.4} />
+              </div>
+              <div style={{ fontSize: 12, color: T.muted, fontWeight: 600 }}>{stat.label}</div>
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.font.num, letterSpacing: -0.3 }}>{stat.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 洞察卡片：fee > 0 類別佔比 > 40% 才顯示 */}
+      {showFeeInsight && (
+        <div style={{ padding: 16, borderRadius: T.r.lg, background: `linear-gradient(135deg, ${T.sunSoft} 0%, ${T.peachSoft} 100%)`, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+          <div style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0, background: '#fff', color: T.peachInk, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="sparkle" size={18} stroke={2.4} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 2 }}>外送佔比偏高</div>
+            <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.5 }}>
+              {feeCategories.map(c => c.name).join('、')} 合計佔今日收入 {Math.round(feeRatio * 100)}%，
+              已扣手續費 {fmt(totalFees)}，建議多推內用方案提升毛利。
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 今日收入來源分解（動態類別，條列式）— 值為 0 的類別不展示 */}
       {(() => {
         const rows = allCategories.filter(c => c.type === 'income' && (todayRecord?.incomes[c.id] ?? 0) > 0)
@@ -334,65 +393,6 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
         </div>
         )
       })()}
-
-      {/* 近 7 天收入小圖 */}
-      <div style={{ padding: 18, borderRadius: T.r.lg, background: T.card, boxShadow: T.shadow.card }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
-          <div>
-            <div style={{ fontSize: 12, color: T.muted, fontWeight: 600 }}>近 7 天收入</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: T.font.num, letterSpacing: -0.4, marginTop: 2 }}>
-              {fmt(week7Income)}
-            </div>
-          </div>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 4,
-            padding: '4px 8px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-            background: trendUp ? T.mintSoft : T.coralSoft,
-            color:      trendUp ? T.mintInk  : T.coralInk,
-          }}>
-            <Icon name={trendUp ? 'trend-up' : 'trend-down'} size={12} stroke={2.6} />
-            {trendPct === null ? '新紀錄' : `${trendPct >= 0 ? '+' : ''}${trendPct}%`}
-          </div>
-        </div>
-        <MiniBarChart bars={last7} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, color: T.muted, fontWeight: 600 }}>
-          {last7.map((b, i) => <span key={i}>{b.day}日</span>)}
-        </div>
-      </div>
-
-      {/* 本月淨額 + 今日成本率 */}
-      <div style={{ display: 'flex', gap: 10 }}>
-        {[
-          { label: '本月淨額',  value: fmt(mtdNet, { plus: true }), icon: 'wallet', soft: T.mintSoft,  ink: T.mintInk  },
-          { label: '今日成本率', value: `${costPct}%`,               icon: 'chart',  soft: T.peachSoft, ink: T.peachInk },
-        ].map(stat => (
-          <div key={stat.label} style={{ flex: 1, padding: '14px 16px', borderRadius: T.r.lg, background: T.card, boxShadow: T.shadow.card, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 24, height: 24, borderRadius: 8, background: stat.soft, color: stat.ink, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name={stat.icon} size={14} stroke={2.4} />
-              </div>
-              <div style={{ fontSize: 12, color: T.muted, fontWeight: 600 }}>{stat.label}</div>
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.font.num, letterSpacing: -0.3 }}>{stat.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* 洞察卡片：fee > 0 類別佔比 > 40% 才顯示 */}
-      {showFeeInsight && (
-        <div style={{ padding: 16, borderRadius: T.r.lg, background: `linear-gradient(135deg, ${T.sunSoft} 0%, ${T.peachSoft} 100%)`, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-          <div style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0, background: '#fff', color: T.peachInk, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="sparkle" size={18} stroke={2.4} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 2 }}>外送佔比偏高</div>
-            <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.5 }}>
-              {feeCategories.map(c => c.name).join('、')} 合計佔今日收入 {Math.round(feeRatio * 100)}%，
-              已扣手續費 {fmt(totalFees)}，建議多推內用方案提升毛利。
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
