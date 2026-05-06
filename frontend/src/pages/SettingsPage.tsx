@@ -285,11 +285,6 @@ export function SettingsPage({
         <SectionLabel label="應用程式" />
         <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
           <SettingRow
-            icon="cloud" iconBg={T.skySoft} iconColor={T.skyInk}
-            title="自動同步" subtitle="每筆變更即時上傳"
-            right={<Toggle on={autoSync} onChange={setAutoSync} />}
-          />
-          <SettingRow
             icon="sparkle" iconBg={T.sunSoft} iconColor={T.sunInk}
             title="打烊提醒" subtitle="每晚 22:30 提醒記帳"
             right={<Toggle on={reminder} onChange={setReminder} />}
@@ -454,6 +449,16 @@ export function SettingsPage({
           </div>
         </div>
         )}
+
+        {/* 自動同步 — 置於 Google Sheets 卡片下方 */}
+        <div style={{ marginTop: 10, background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
+          <SettingRow
+            icon="cloud" iconBg={T.skySoft} iconColor={T.skyInk}
+            title="自動同步" subtitle="每筆變更即時上傳"
+            right={<Toggle on={autoSync} onChange={setAutoSync} />}
+            last
+          />
+        </div>
       </div>
 
       <div style={{ textAlign: 'center', fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 8 }}>
