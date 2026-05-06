@@ -286,17 +286,6 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
                 </div>
                 <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>支出</span>
               </div>
-              <button
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  padding: '4px 8px', borderRadius: 8,
-                  background: T.peachSoft, color: T.peachInk, border: 'none',
-                  fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: T.font.sans,
-                }}
-              >
-                <Icon name="camera" size={12} stroke={2.6} />
-                拍照記帳
-              </button>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
