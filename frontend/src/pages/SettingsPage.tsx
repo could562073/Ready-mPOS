@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { T } from '../lib/tokens'
 import { Icon } from '../components/Icon'
 import { db } from '../db'
+import { getPermission, requestPermission, sendReminderToSW } from '../lib/notification'
 
 interface Props {
   syncing: boolean
@@ -97,8 +98,14 @@ export function SettingsPage({
   const [customId,     setCustomId]     = useState('')
   const [customName,   setCustomName]   = useState('')
   const [customSaved,  setCustomSaved]  = useState(false)
-  const [autoSync,     setAutoSync]     = useState(true)
-  const [reminder,     setReminder]     = useState(true)
+  const [autoSync,        setAutoSync]        = useState(true)
+  const [reminderEnabled, setReminderEnabled] = useState(() =>
+    localStorage.getItem('mpos_reminder_enabled') === 'true'
+  )
+  const [reminderTime, setReminderTime] = useState(() =>
+    localStorage.getItem('mpos_reminder_time') || '22:30'
+  )
+  const [permStatus, setPermStatus] = useState(() => getPermission())
 
   // 店家身份
   const [restaurantName, setRestaurantName] = useState(() => localStorage.getItem('mpos_restaurant_name') || '我的餐廳')
@@ -152,6 +159,25 @@ export function SettingsPage({
     onSetCustomSheet(customId.trim(), customName.trim() || '自訂試算表')
     setCustomSaved(true)
     setTimeout(() => { setCustomSaved(false); setShowAdvanced(false) }, 1500)
+  }
+
+  const handleReminderToggle = async (val: boolean) => {
+    if (val && permStatus !== 'granted') {
+      const granted = await requestPermission()
+      const newStatus = getPermission()
+      setPermStatus(newStatus)
+      if (!granted) return
+    }
+    setReminderEnabled(val)
+    localStorage.setItem('mpos_reminder_enabled', String(val))
+    await sendReminderToSW(val, reminderTime)
+  }
+
+  const handleReminderTimeChange = async (time: string) => {
+    if (!time) return
+    setReminderTime(time)
+    localStorage.setItem('mpos_reminder_time', time)
+    if (reminderEnabled) await sendReminderToSW(true, time)
   }
 
   const connectLabel = creating ? '建立試算表中…' : signingIn ? '連結中…' : '連結 Google 帳號'
@@ -291,10 +317,48 @@ export function SettingsPage({
           />
           <SettingRow
             icon="sparkle" iconBg={T.sunSoft} iconColor={T.sunInk}
-            title="打烊提醒" subtitle="每晚 22:30 提醒記帳"
-            right={<Toggle on={reminder} onChange={setReminder} />}
-            last
+            title="打烊提醒"
+            subtitle={reminderEnabled ? `每晚 ${reminderTime} 提醒記帳` : '每晚提醒記帳'}
+            right={<Toggle on={reminderEnabled} onChange={handleReminderToggle} />}
+            last={!reminderEnabled}
           />
+          {reminderEnabled && (
+            <div style={{ padding: '10px 16px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: T.muted, flex: 1 }}>提醒時間</span>
+              <input
+                type="time"
+                value={reminderTime}
+                onChange={e => handleReminderTimeChange(e.target.value)}
+                style={{
+                  padding: '8px 12px', borderRadius: T.r.sm,
+                  border: `1.5px solid ${T.hairline}`, outline: 'none',
+                  fontSize: 15, fontWeight: 700, color: T.ink,
+                  background: T.bg, cursor: 'pointer',
+                  fontFamily: T.font.num,
+                }}
+              />
+              {permStatus === 'denied' && (
+                <span style={{ fontSize: 11, color: T.coralInk, fontWeight: 600 }}>
+                  請在瀏覽器設定中允許通知
+                </span>
+              )}
+              {permStatus === 'default' && (
+                <button
+                  onClick={async () => {
+                    const granted = await requestPermission()
+                    setPermStatus(getPermission())
+                    if (granted) await sendReminderToSW(true, reminderTime)
+                  }}
+                  style={{
+                    padding: '6px 12px', borderRadius: 999, border: 'none',
+                    background: T.sunSoft, color: T.sunInk,
+                    fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: T.font.sans,
+                    whiteSpace: 'nowrap',
+                  }}
+                >允許通知</button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

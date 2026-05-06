@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { DashboardPage } from './pages/DashboardPage'
 import { DailyEntryPage } from './pages/DailyEntryPage'
 import { MonthlyReportPage } from './pages/MonthlyReportPage'
@@ -8,6 +8,7 @@ import { OnboardingPage } from './pages/OnboardingPage'
 import { Icon } from './components/Icon'
 import { T } from './lib/tokens'
 import { useSyncService } from './hooks/useSyncService'
+import { registerSW, sendReminderToSW, getPermission } from './lib/notification'
 
 type Tab = 'dashboard' | 'daily' | 'monthly' | 'settings'
 type SubPage = 'categories' | null
@@ -28,6 +29,20 @@ const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
 
 function App() {
   const [tab, setTab] = useState<Tab>('dashboard')
+
+  // 啟動時註冊 Service Worker，並將已儲存的提醒設定送給 SW
+  useEffect(() => {
+    registerSW().then(() => {
+      if (!('serviceWorker' in navigator)) return
+      navigator.serviceWorker.ready.then(() => {
+        const enabled = localStorage.getItem('mpos_reminder_enabled') === 'true'
+        const time    = localStorage.getItem('mpos_reminder_time') || '22:30'
+        if (enabled && getPermission() === 'granted') {
+          sendReminderToSW(true, time)
+        }
+      })
+    })
+  }, [])
   const [dailyDate, setDailyDate] = useState(() => toLocalDateString(new Date()))
   const [showOnboarding, setShowOnboarding] = useState(
     () => !localStorage.getItem('mpos_onboarded')
