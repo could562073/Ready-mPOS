@@ -7,7 +7,7 @@ export function fmt(
   const abs = Math.abs(Math.round(n));
   const str = abs.toLocaleString('en-US');
   if (n === 0) return '$0';
-  if (opts.sign && n < 0) return `-$${str}`;
+  if (n < 0) return `-$${str}`;       // 負值永遠顯示負號
   if (opts.plus && n > 0) return `+$${str}`;
   return `$${str}`;
 }

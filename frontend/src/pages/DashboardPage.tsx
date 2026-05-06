@@ -82,9 +82,9 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
 
   // 外送平台手續費：所有 fee > 0 的收入類別
   const feeCategories = incomeCategories.filter(c => c.fee && c.fee > 0)
-  const totalFees = todayRecord
+  const totalFees = Math.max(0, todayRecord
     ? feeCategories.reduce((s, c) => s + (todayRecord.incomes[c.id] ?? 0) * c.fee!, 0)
-    : 0
+    : 0)
   const todayNetAfterFees = todayNet - totalFees
 
   // 本月加總（含手續費扣除）

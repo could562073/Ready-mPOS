@@ -134,9 +134,9 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
   const net          = totalIncome - totalExpense
 
   // 平台手續費：有 fee > 0 的收入類別
-  const fees = incomeCategories
+  const fees = Math.max(0, incomeCategories
     .filter(c => c.fee && c.fee > 0)
-    .reduce((s, c) => s + (incomes[c.id] ?? 0) * c.fee!, 0)
+    .reduce((s, c) => s + (incomes[c.id] ?? 0) * c.fee!, 0))
   const netAfterFees = net - fees
 
   const handleSave = async () => {
