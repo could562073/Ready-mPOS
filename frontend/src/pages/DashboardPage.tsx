@@ -199,7 +199,9 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
                 <div style={{ width: 1, background: 'rgba(255,255,255,0.2)' }} />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 600 }}>平台費</div>
-                  <div style={{ fontSize: 17, fontWeight: 700, fontFamily: T.font.num, marginTop: 2 }}>-{fmt(totalFees)}</div>
+                  <div style={{ fontSize: 17, fontWeight: 700, fontFamily: T.font.num, marginTop: 2 }}>
+                    <span style={{ fontSize: 13, opacity: 0.7, marginRight: 1 }}>−</span>{fmt(totalFees)}
+                  </div>
                 </div>
               </>
             )}
