@@ -293,11 +293,7 @@ export function SettingsPage({
             icon="sparkle" iconBg={T.sunSoft} iconColor={T.sunInk}
             title="打烊提醒" subtitle="每晚 22:30 提醒記帳"
             right={<Toggle on={reminder} onChange={setReminder} />}
-          />
-          <SettingRow
-            icon="camera" iconBg={T.peachSoft} iconColor={T.peachInk}
-            title="發票 OCR 辨識" subtitle="拍照自動填入金額"
-            right={null} last
+            last
           />
         </div>
       </div>
