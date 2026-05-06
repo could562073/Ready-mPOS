@@ -6,7 +6,13 @@
       "Bash(npm run *)",
       "Bash(mvn --version)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "WebFetch(domain:api.anthropic.com)",
+      "Bash(cp webfetch-1777977446310-a9rgn3.bin design.html.gz)",
+      "Bash(gunzip -f design.html.gz)",
+      "Bash(mkdir -p extracted)",
+      "Bash(tar -xf design.html -C extracted)",
+      "Bash(npx tsc *)"
     ]
   }
 }

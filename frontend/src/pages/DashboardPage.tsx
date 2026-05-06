@@ -235,9 +235,9 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
         <Icon name="chevron-r" size={18} color={T.muted} stroke={2.4} />
       </button>
 
-      {/* 今日收入來源分解（動態類別，條列式）— 已停用但有值的類別也照常顯示 */}
+      {/* 今日收入來源分解（動態類別，條列式）— 值為 0 的類別不展示 */}
       {(() => {
-        const rows = allCategories.filter(c => c.type === 'income' && (c.enabled || (todayRecord?.incomes[c.id] ?? 0) > 0))
+        const rows = allCategories.filter(c => c.type === 'income' && (todayRecord?.incomes[c.id] ?? 0) > 0)
         if (rows.length === 0) return null
         return (
         <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
@@ -285,9 +285,9 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
         )
       })()}
 
-      {/* 今日支出明細 — 已停用但有值的類別也照常顯示 */}
+      {/* 今日支出明細 — 值為 0 的類別不展示 */}
       {(() => {
-        const rows = allCategories.filter(c => c.type === 'expense' && (c.enabled || (todayRecord?.expenses[c.id] ?? 0) > 0))
+        const rows = allCategories.filter(c => c.type === 'expense' && (todayRecord?.expenses[c.id] ?? 0) > 0)
         if (rows.length === 0) return null
         return (
         <div style={{ background: T.card, borderRadius: 22, boxShadow: T.shadow.card, overflow: 'hidden' }}>
