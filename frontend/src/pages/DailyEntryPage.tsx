@@ -15,9 +15,10 @@ interface DailyEntryPageProps {
   syncing?: boolean
 }
 
-// 單一金額輸入欄
+// 單一金額輸入欄（含項目備註）
 function AmountField({
   icon, label, sublabel, color, value, onChange, focused, onFocus,
+  note, onNoteChange,
 }: {
   icon: string
   label: string
@@ -27,57 +28,83 @@ function AmountField({
   onChange: (v: number) => void
   focused: boolean
   onFocus: () => void
+  note: string
+  onNoteChange: (v: string) => void
 }) {
   const ref = useRef<HTMLInputElement>(null)
   return (
     <div
       onClick={() => { ref.current?.focus(); onFocus() }}
       style={{
-        display: 'flex', alignItems: 'center', gap: 14,
+        display: 'flex', flexDirection: 'column', gap: 0,
         padding: '14px', borderRadius: 18,
         background: focused ? color.soft : 'transparent',
         transition: 'background 160ms ease',
         cursor: 'text',
       }}
     >
-      <div
-        style={{
-          width: 40, height: 40, borderRadius: 13, flexShrink: 0,
-          background: focused ? color.bg : color.soft,
-          color: focused ? '#fff' : color.ink,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'all 160ms ease',
-        }}
-      >
-        <Icon name={icon} size={20} stroke={2.2} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{label}</div>
-        {sublabel && (
-          <div style={{ fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 1 }}>{sublabel}</div>
-        )}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-        <span style={{ fontSize: 14, color: T.muted, fontWeight: 600 }}>$</span>
-        <input
-          ref={ref}
-          type="text"
-          inputMode="numeric"
-          value={value === 0 ? '' : value.toLocaleString('en-US')}
-          onFocus={onFocus}
-          onChange={e => {
-            const raw = e.target.value.replace(/[^\d]/g, '')
-            onChange(raw === '' ? 0 : parseInt(raw, 10))
-          }}
-          placeholder="0"
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div
           style={{
-            width: 100, textAlign: 'right',
-            border: 'none', outline: 'none', background: 'transparent',
-            fontFamily: T.font.num, fontSize: 19, fontWeight: 800,
-            color: T.ink, letterSpacing: -0.3, padding: 0,
+            width: 40, height: 40, borderRadius: 13, flexShrink: 0,
+            background: focused ? color.bg : color.soft,
+            color: focused ? '#fff' : color.ink,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'all 160ms ease',
           }}
-        />
+        >
+          <Icon name={icon} size={20} stroke={2.2} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{label}</div>
+          {sublabel && (
+            <div style={{ fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 1 }}>{sublabel}</div>
+          )}
+          {/* 備註：未編輯時顯示為靜態文字 */}
+          {!focused && note && (
+            <div style={{ fontSize: 11, color: T.ink2, fontWeight: 600, marginTop: 2 }}>{note}</div>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+          <span style={{ fontSize: 14, color: T.muted, fontWeight: 600 }}>$</span>
+          <input
+            ref={ref}
+            type="text"
+            inputMode="numeric"
+            value={value === 0 ? '' : value.toLocaleString('en-US')}
+            onFocus={onFocus}
+            onChange={e => {
+              const raw = e.target.value.replace(/[^\d]/g, '')
+              onChange(raw === '' ? 0 : parseInt(raw, 10))
+            }}
+            placeholder="0"
+            style={{
+              width: 100, textAlign: 'right',
+              border: 'none', outline: 'none', background: 'transparent',
+              fontFamily: T.font.num, fontSize: 19, fontWeight: 800,
+              color: T.ink, letterSpacing: -0.3, padding: 0,
+            }}
+          />
+        </div>
       </div>
+      {/* 項目備註輸入：focused 時顯示編輯框 */}
+      {focused && (
+        <div style={{ paddingLeft: 54, marginTop: 4 }}>
+          <input
+            type="text"
+            value={note}
+            onClick={e => e.stopPropagation()}
+            onChange={e => onNoteChange(e.target.value)}
+            placeholder="備註（選填）"
+            style={{
+              width: '100%', border: 'none', outline: 'none',
+              background: 'transparent', padding: '4px 0',
+              fontFamily: T.font.sans, fontSize: 12, color: T.ink2,
+              fontWeight: 600,
+            }}
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -105,6 +132,9 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
   // 收支金額 map：key = category.id
   const [incomes,      setIncomes]      = useState<Record<string, number>>({})
   const [expenses,     setExpenses]     = useState<Record<string, number>>({})
+  // 各項目備註 map：key = category.id
+  const [incomeNotes,  setIncomeNotes]  = useState<Record<string, string>>({})
+  const [expenseNotes, setExpenseNotes] = useState<Record<string, string>>({})
   const [notes,        setNotes]        = useState('')
   const [saved,        setSaved]        = useState(false)
   const [showConfirm,  setShowConfirm]  = useState(false)
@@ -120,10 +150,14 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
       const knownExp = new Set(allCats.filter(c => c.type === 'expense').map(c => c.id))
       setIncomes(Object.fromEntries(Object.entries(record.incomes  ?? {}).filter(([k]) => knownInc.has(k))))
       setExpenses(Object.fromEntries(Object.entries(record.expenses ?? {}).filter(([k]) => knownExp.has(k))))
+      setIncomeNotes(Object.fromEntries(Object.entries(record.incomeNotes  ?? {}).filter(([k]) => knownInc.has(k))))
+      setExpenseNotes(Object.fromEntries(Object.entries(record.expenseNotes ?? {}).filter(([k]) => knownExp.has(k))))
       setNotes(record.notes ?? '')
     } else {
       setIncomes({})
       setExpenses({})
+      setIncomeNotes({})
+      setExpenseNotes({})
       setNotes('')
     }
     setSaved(false)
@@ -141,7 +175,10 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
 
   const handleSave = async () => {
     setShowConfirm(false)
-    await save({ incomes, expenses, notes })
+    // 只儲存有內容的備註，避免空字串佔位
+    const cleanIncNotes  = Object.fromEntries(Object.entries(incomeNotes).filter(([, v]) => v.trim()))
+    const cleanExpNotes  = Object.fromEntries(Object.entries(expenseNotes).filter(([, v]) => v.trim()))
+    await save({ incomes, expenses, incomeNotes: cleanIncNotes, expenseNotes: cleanExpNotes, notes })
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
     onSync?.()
@@ -248,6 +285,8 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
                     onChange={v => setIncomes(prev => ({ ...prev, [cat.id]: v }))}
                     focused={focusKey === cat.id}
                     onFocus={() => setFocusKey(cat.id)}
+                    note={incomeNotes[cat.id] ?? ''}
+                    onNoteChange={v => setIncomeNotes(prev => ({ ...prev, [cat.id]: v }))}
                   />
                 )
               })}
@@ -300,6 +339,8 @@ export function DailyEntryPage({ date, onDateChange, onSync, syncing }: DailyEnt
                     onChange={v => setExpenses(prev => ({ ...prev, [cat.id]: v }))}
                     focused={focusKey === cat.id}
                     onFocus={() => setFocusKey(cat.id)}
+                    note={expenseNotes[cat.id] ?? ''}
+                    onNoteChange={v => setExpenseNotes(prev => ({ ...prev, [cat.id]: v }))}
                   />
                 )
               })}

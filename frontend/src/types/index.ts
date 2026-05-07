@@ -22,6 +22,10 @@ export interface DailyRecord {
   // 支出：key = Category.id，value = 金額
   expenses: Record<string, number>
 
+  // 各項目備註：key = Category.id，value = 備註文字（例：「優惠券」「瓦斯費」）
+  incomeNotes?: Record<string, string>
+  expenseNotes?: Record<string, string>
+
   notes?: string
 
   syncStatus: SyncStatus

@@ -19,11 +19,12 @@ const LS_SHEET_NAME = 'gsheets_spreadsheet_name'
 // 固定欄位名稱（不受類別增減影響）
 const COL_DATE          = '日期'
 const COL_NOTES         = '備註'
+const COL_ITEM_NOTES    = '項目備註'
 const COL_TOTAL_INCOME  = '總收入'
 const COL_TOTAL_EXPENSE = '總支出'
 const COL_NET           = '淨利'
 
-const FIXED_COLS = new Set([COL_DATE, COL_NOTES, COL_TOTAL_INCOME, COL_TOTAL_EXPENSE, COL_NET])
+const FIXED_COLS = new Set([COL_DATE, COL_NOTES, COL_ITEM_NOTES, COL_TOTAL_INCOME, COL_TOTAL_EXPENSE, COL_NET])
 
 // _config tab 欄位順序
 const CONFIG_TAB     = '_config'
@@ -309,7 +310,7 @@ export async function pullConfigFromSheets(spreadsheetId: string): Promise<Categ
 function buildHeaders(categories: Category[]): string[] {
   const incomeNames  = categories.filter(c => c.type === 'income').map(c => c.name)
   const expenseNames = categories.filter(c => c.type === 'expense').map(c => c.name)
-  return [COL_DATE, ...incomeNames, ...expenseNames, COL_NOTES, COL_TOTAL_INCOME, COL_TOTAL_EXPENSE, COL_NET]
+  return [COL_DATE, ...incomeNames, ...expenseNames, COL_NOTES, COL_ITEM_NOTES, COL_TOTAL_INCOME, COL_TOTAL_EXPENSE, COL_NET]
 }
 
 // 將記錄轉為列（依 categories 順序排列金額）
@@ -323,11 +324,23 @@ function recordToRow(r: DailyRecord, categories: Category[]): (string | number)[
   const totalIncome  = incomeVals.reduce((a, b) => a + b, 0)
   const totalExpense = expenseVals.reduce((a, b) => a + b, 0)
 
+  // 序列化項目備註：「類別名:備註;類別名:備註」，方便人讀也可反向解析
+  const itemNotesParts: string[] = []
+  for (const c of incomes) {
+    const n = (r.incomeNotes?.[c.id] ?? '').trim()
+    if (n) itemNotesParts.push(`${c.name}:${n}`)
+  }
+  for (const c of expenses) {
+    const n = (r.expenseNotes?.[c.id] ?? '').trim()
+    if (n) itemNotesParts.push(`${c.name}:${n}`)
+  }
+
   return [
     r.date,
     ...incomeVals,
     ...expenseVals,
     r.notes ?? '',
+    itemNotesParts.join(';'),
     totalIncome,
     totalExpense,
     totalIncome - totalExpense,
@@ -379,10 +392,29 @@ export async function pullAllFromSheets(spreadsheetId: string, categories: Categ
         // 找不到對應類別的欄位直接略過，避免污染 incomes 造成金額虛增
       })
 
+      // 反向解析項目備註欄：「類別名:備註;類別名:備註」→ incomeNotes / expenseNotes
+      const incomeNotes:  Record<string, string> = {}
+      const expenseNotes: Record<string, string> = {}
+      const rawItemNotes = (row[header.indexOf(COL_ITEM_NOTES)] ?? '').trim()
+      if (rawItemNotes) {
+        for (const part of rawItemNotes.split(';')) {
+          const sep = part.indexOf(':')
+          if (sep < 1) continue
+          const catName = part.slice(0, sep).trim()
+          const noteVal = part.slice(sep + 1).trim()
+          if (!noteVal) continue
+          const cat = catByName.get(catName)
+          if (cat?.type === 'expense') expenseNotes[cat.id] = noteVal
+          else if (cat) incomeNotes[cat.id] = noteVal
+        }
+      }
+
       records.push({
         date,
         incomes,
         expenses,
+        incomeNotes,
+        expenseNotes,
         notes:      row[header.indexOf(COL_NOTES)] ?? '',
         syncStatus: 'SYNCED',
         createdAt:  now,
