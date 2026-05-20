@@ -1,7 +1,10 @@
 import type { Category } from '../types'
 import type { DailyRecord } from '../types'
 
-const LS_KEY = 'mpos_categories'
+const LS_KEY   = 'mpos_categories'
+// 本機類別已修改但尚未同步到 Sheets 的旗標
+// 用途：避免 syncAll 拉取雲端設定時覆蓋使用者尚未上傳的本機編輯
+const LS_DIRTY = 'mpos_categories_dirty'
 
 // 預設收入類別（對應原有固定欄位）
 export const DEFAULT_INCOME: Category[] = [
@@ -32,9 +35,24 @@ export function getCategories(): Category[] {
   }
 }
 
-// 寫入 localStorage
+// 寫入 localStorage（使用者編輯路徑）
+// 標記 dirty，提示下次 syncAll 需先推送、且暫停雲端拉取覆蓋
 export function saveCategories(categories: Category[]): void {
   localStorage.setItem(LS_KEY, JSON.stringify(categories))
+  localStorage.setItem(LS_DIRTY, '1')
+}
+
+// 雲端拉取路徑專用：寫入但不標記 dirty，避免把剛拉下來的設定又當成本機修改回推
+export function applyCloudCategories(categories: Category[]): void {
+  localStorage.setItem(LS_KEY, JSON.stringify(categories))
+}
+
+export function isCategoriesDirty(): boolean {
+  return localStorage.getItem(LS_DIRTY) === '1'
+}
+
+export function clearCategoriesDirty(): void {
+  localStorage.removeItem(LS_DIRTY)
 }
 
 // 只取某種類型的啟用類別

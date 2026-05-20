@@ -1,5 +1,5 @@
 import type { DailyRecord, Category } from '../types'
-import { saveCategories } from './categories'
+import { applyCloudCategories, isCategoriesDirty, clearCategoriesDirty } from './categories'
 
 const CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) || ''
 
@@ -264,11 +264,16 @@ export async function pushConfigToSheets(spreadsheetId: string, categories: Cate
     { range: `${CONFIG_TAB}!A1`, majorDimension: 'ROWS', values },
     token,
   )
+  // 推送成功後清除 dirty 旗標
+  clearCategoriesDirty()
 }
 
 // 從 _config tab 讀取類別設定並存入 localStorage
-// 回傳 null 表示雲端無設定（保留本地預設值）
+// 回傳 null 表示雲端無設定 或 本機有未同步修改（保留本機資料）
 export async function pullConfigFromSheets(spreadsheetId: string): Promise<Category[] | null> {
+  // 開頭快速檢查：若本機有未推送的修改，直接跳過拉取避免覆蓋使用者編輯
+  if (isCategoriesDirty()) return null
+
   const token = await acquireToken()
   try {
     const data = await sheetsGet<{ values?: string[][] }>(
@@ -295,7 +300,9 @@ export async function pullConfigFromSheets(spreadsheetId: string): Promise<Categ
       }))
 
     if (categories.length > 0) {
-      saveCategories(categories)
+      // 套用前再次檢查：拉取期間使用者可能剛好做了編輯
+      if (isCategoriesDirty()) return null
+      applyCloudCategories(categories)
       return categories
     }
     return null

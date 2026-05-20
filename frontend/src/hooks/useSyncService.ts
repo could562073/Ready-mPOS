@@ -16,7 +16,7 @@ import {
   syncMonthToSheets,
   clearIfInvalidSpreadsheet,
 } from '../lib/sheets'
-import { getCategories } from '../lib/categories'
+import { getCategories, isCategoriesDirty, clearCategoriesDirty } from '../lib/categories'
 import type { Category } from '../types'
 
 const AUTO_SHEET_NAME = 'Ready-mPOS 記帳'
@@ -67,6 +67,16 @@ export function useSyncService() {
     setSyncing(true)
 
     try {
+      // 若本機類別有未同步的修改，先推送雲端，再拉取
+      // 避免「先拉取舊雲端 → 覆蓋本機編輯」的競態，並確保後續記錄推送使用正確的欄位
+      if (isCategoriesDirty()) {
+        try {
+          await pushConfigToSheets(sheetId, getCategories())
+        } catch (err) {
+          console.error('[sync-config] push failed:', err)
+        }
+      }
+
       // 取得類別設定：優先從雲端 _config 拉取，fallback 用 localStorage
       const cloudCategories = await pullConfigFromSheets(sheetId)
       const categories = cloudCategories ?? getCategories()
@@ -117,6 +127,8 @@ export function useSyncService() {
     lockRef.current = true
     setRestoring(true)
     try {
+      // 使用者明確選擇「以雲端覆蓋本機」，清除 dirty 旗標讓 pullConfigFromSheets 正常套用
+      clearCategoriesDirty()
       const cloudCategories = await pullConfigFromSheets(sheetId)
       const categories = cloudCategories ?? getCategories()
 
