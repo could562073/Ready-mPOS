@@ -226,6 +226,22 @@ async function sheetsPut(path: string, body: unknown, token: string): Promise<vo
   }
 }
 
+// 清空指定範圍 — PUT 只覆寫指定儲存格，刪除類別/減少行數時舊資料會殘留
+// 因此整表覆蓋前需先 clear，避免 pull 把殘留資料當成有效類別讀回來
+async function sheetsValuesClear(spreadsheetId: string, range: string, token: string): Promise<void> {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:clear`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  )
+  if (!res.ok) {
+    const msg = await res.text().catch(() => '')
+    throw new Error(`Sheets values:clear ${range} → ${res.status}: ${msg}`)
+  }
+}
+
 async function getSheetTitles(spreadsheetId: string, token: string): Promise<string[]> {
   const data = await sheetsGet<{ sheets: { properties: { title: string } }[] }>(
     `/${spreadsheetId}?fields=sheets.properties.title`,
@@ -259,6 +275,8 @@ export async function pushConfigToSheets(spreadsheetId: string, categories: Cate
     ]),
   ]
 
+  // 先清空整個 tab — 否則刪除類別後舊列會殘留，下次 pull 會把已刪除類別讀回 localStorage
+  await sheetsValuesClear(spreadsheetId, CONFIG_TAB, token)
   await sheetsPut(
     `/${spreadsheetId}/values/${encodeURIComponent(CONFIG_TAB + '!A1')}?valueInputOption=USER_ENTERED`,
     { range: `${CONFIG_TAB}!A1`, majorDimension: 'ROWS', values },
@@ -446,6 +464,8 @@ export async function syncMonthToSheets(
   const headers = buildHeaders(categories)
   const values: (string | number)[][] = [headers, ...records.map(r => recordToRow(r, categories))]
 
+  // 先清空整個月份分頁 — 否則刪除類別後舊欄位殘留，或記錄筆數變少時舊列殘留
+  await sheetsValuesClear(spreadsheetId, month, token)
   await sheetsPut(
     `/${spreadsheetId}/values/${encodeURIComponent(month + '!A1')}?valueInputOption=USER_ENTERED`,
     { range: `${month}!A1`, majorDimension: 'ROWS', values },
