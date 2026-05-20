@@ -1,15 +1,18 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { T, colorMap } from '../lib/tokens'
 import { Icon } from '../components/Icon'
 import { getCategories, saveCategories } from '../lib/categories'
 import { EditSheet, EMPTY_INCOME_DRAFT, EMPTY_EXPENSE_DRAFT } from '../components/CategoryEditSheet'
 import type { DraftCategory } from '../components/CategoryEditSheet'
 import type { Category } from '../types'
+import { db } from '../db'
 
 interface Props {
   onBack: () => void
   googleEmail: string | null
   onSyncCategories: (cats: Category[]) => void
+  // 重命名或刪除類別後需呼叫，會重寫雲端月份分頁的欄位標題並推送整月資料
+  onSyncAll: () => void
 }
 
 // 類別列表單行
@@ -81,21 +84,29 @@ function CategoryRow({ cat, onToggle, onEdit }: {
 }
 
 
-export function CategoriesPage({ onBack, googleEmail, onSyncCategories }: Props) {
+export function CategoriesPage({ onBack, googleEmail, onSyncCategories, onSyncAll }: Props) {
   const [categories, setCategories] = useState<Category[]>(() => getCategories())
   const [editTarget, setEditTarget] = useState<{ cat: DraftCategory; isNew: boolean } | null>(null)
-  // 記錄進入時的初始狀態，返回時只在有實際修改時才呼叫 Sheets 同步
-  const initialSnapshot = useRef(JSON.stringify(getCategories()))
 
-  // 立即存入 localStorage；Sheets 同步延至返回時統一執行一次
-  // 避免每次操作都呼叫 acquireToken，與 syncAll 並行導致 GIS 重複彈窗
+  // 立即存入 localStorage（saveCategories 內部會標記 dirty 旗標）
   const persist = (updated: Category[]) => {
     setCategories(updated)
     saveCategories(updated)
   }
 
+  // 重命名/刪除會改變 Google Sheets 月份分頁的欄位標題，
+  // 標記所有本機記錄為 PENDING：
+  // 1) syncAll 合併階段 PENDING 記錄不會被雲端拉取覆蓋（保住本機金額）
+  // 2) 後續推送階段會把每個月用新欄位重寫，雲端與本機對齊
+  const markAllRecordsPending = async () => {
+    const now = new Date().toISOString()
+    await db.dailyRecords.toCollection().modify({ syncStatus: 'PENDING', updatedAt: now })
+  }
+
   const handleToggle = (id: string) => {
-    persist(categories.map(c => c.id === id ? { ...c, enabled: !c.enabled } : c))
+    const updated = categories.map(c => c.id === id ? { ...c, enabled: !c.enabled } : c)
+    persist(updated)
+    onSyncCategories(updated)
   }
 
   const handleEdit = (cat: Category) => {
@@ -107,19 +118,31 @@ export function CategoriesPage({ onBack, googleEmail, onSyncCategories }: Props)
     setEditTarget({ cat: { ...base, id: Date.now().toString(36) }, isNew: true })
   }
 
-  const handleSave = (draft: DraftCategory) => {
-    const exists = categories.some(c => c.id === draft.id)
-    const updated = exists
+  const handleSave = async (draft: DraftCategory) => {
+    const existing = categories.find(c => c.id === draft.id)
+    const isRename = !!existing && existing.name !== draft.name
+
+    const updated = existing
       ? categories.map(c => c.id === draft.id ? { ...c, ...draft } : c)
       : [...categories, draft as Category]
     persist(updated)
     setEditTarget(null)
+
+    if (isRename) {
+      await markAllRecordsPending()
+      onSyncAll()
+    } else {
+      onSyncCategories(updated)
+    }
   }
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!window.confirm('確定刪除這個類別？歷史帳目不受影響。')) return
-    persist(categories.filter(c => c.id !== id))
+    const updated = categories.filter(c => c.id !== id)
+    persist(updated)
     setEditTarget(null)
+    await markAllRecordsPending()
+    onSyncAll()
   }
 
   const incomeList  = categories.filter(c => c.type === 'income')
@@ -131,13 +154,7 @@ export function CategoriesPage({ onBack, googleEmail, onSyncCategories }: Props)
         {/* 頂部標題列 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 0' }}>
           <button
-            onClick={() => {
-              // 只在類別有實際修改時才同步，避免無謂的 token 請求觸發登入 popup
-              if (JSON.stringify(categories) !== initialSnapshot.current) {
-                onSyncCategories(categories)
-              }
-              onBack()
-            }}
+            onClick={onBack}
             style={{
               width: 36, height: 36, borderRadius: 12, border: 'none',
               background: T.card, color: T.ink, cursor: 'pointer',

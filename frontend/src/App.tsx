@@ -119,6 +119,7 @@ function App() {
             onBack={() => setSubPage(null)}
             googleEmail={googleEmail}
             onSyncCategories={syncCategories}
+            onSyncAll={syncAll}
           />
         )}
       </div>
