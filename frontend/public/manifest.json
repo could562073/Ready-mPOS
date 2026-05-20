@@ -1,0 +1,20 @@
+{
+  "name": "Ready-mPOS — 店家記帳系統",
+  "short_name": "Ready-mPOS",
+  "description": "給餐廳/咖啡廳老闆用的記帳 App",
+  "lang": "zh-TW",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#10C77E",
+  "icons": [
+    {
+      "src": "logo.jpg",
+      "sizes": "1024x1024",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}
