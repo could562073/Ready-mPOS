@@ -12,7 +12,8 @@
       "Bash(gunzip -f design.html.gz)",
       "Bash(mkdir -p extracted)",
       "Bash(tar -xf design.html -C extracted)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(node -e \"console.log\\(require.resolve\\('sharp'\\)\\)\")"
     ]
   }
 }
