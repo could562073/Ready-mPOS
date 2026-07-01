@@ -62,3 +62,6 @@ logs/
 # ===== Test reports =====
 coverage/
 test-results/
+
+# ===== Claude Code worktrees =====
+.claude/worktrees/
