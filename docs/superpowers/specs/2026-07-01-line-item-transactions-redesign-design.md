@@ -168,6 +168,12 @@ interface Category {
 
 每階段可獨立跑、可 commit、可驗證。
 
+### ⚠️ 遷移時序注意（Phase 4/5 UI 切換必做）
+
+Dexie v3 upgrade 只在瀏覽器**首次開啟 v3** 時，把 `dailyRecords` 遷移到 `transactions` **一次**。Phase 1–3 期間 UI 仍寫入舊 `dailyRecords`，因此**在 Phase 1 之後、UI 切換到讀 `transactions` 之前新增/修改的資料，只會存在於 `dailyRecords`**。
+
+Phase 4/5 把 UI 切到讀 `transactions` 時，**必須加一個「重新遷移 / 對帳」步驟**（以 `Transaction.id` 去重併入，避免重覆匯入），不可假設一次性 v3 upgrade 已涵蓋全部；否則這段期間新增的資料會從畫面上消失（原始資料仍安全存在 `dailyRecords`，可復原，但使用者看不到）。此點由 Phase 1 最終 code review 提出並記錄。
+
 ## YAGNI / 明確排除
 
 - 不做獨立「日備註」欄位。
