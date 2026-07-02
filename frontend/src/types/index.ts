@@ -10,6 +10,8 @@ export interface Category {
   fee?: number          // 平台手續費比例（0–1），收入類別用
   enabled: boolean      // false = 停用但歷史資料仍保留
   type: 'income' | 'expense'
+  subs?: { id: string; name: string }[]  // 二級分類清單（選填）
+  defaultSubId?: string | null           // 預設二級分類 id（null = 無）
 }
 
 // 每日記帳記錄 — 收支改為動態 Record，支援自訂類別增減
@@ -31,4 +33,19 @@ export interface DailyRecord {
   syncStatus: SyncStatus
   createdAt: string     // ISO 8601 timestamp
   updatedAt: string     // ISO 8601 timestamp
+}
+
+// 逐筆交易記錄 — 取代 DailyRecord 的單筆收入/支出項目（Phase 1 逐筆交易資料層）
+export interface Transaction {
+  localId?: number       // Dexie 自增主鍵（++localId），DB 層產生
+  id: string             // 穩定同步 ID（跨裝置去重）
+  date: string           // 'YYYY-MM-DD'
+  type: 'income' | 'expense'
+  categoryId: string
+  subId?: string | null  // 二級類別 id（null = 無）
+  amount: number         // 正數；收支方向由 type 決定
+  note?: string
+  syncStatus: SyncStatus
+  createdAt: string
+  updatedAt: string
 }
