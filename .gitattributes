@@ -1,0 +1,13 @@
+# 統一換行字元：所有文字檔在 repo 內一律以 LF 儲存，
+# 避免 Windows / WSL 編輯器把整批檔案存成 CRLF 造成假 diff。
+* text=auto eol=lf
+
+# 二進位檔案不做換行轉換
+*.jpg  binary
+*.jpeg binary
+*.png  binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.woff  binary
+*.woff2 binary
