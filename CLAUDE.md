@@ -1,7 +1,7 @@
 # CLAUDE.md - Ready-mPOS
 
-> **Documentation Version**: 1.3
-> **Last Updated**: 2026-05-06
+> **Documentation Version**: 1.4
+> **Last Updated**: 2026-07-02
 > **Project**: Ready-mPOS
 > **Description**: 店家記帳系統 — 給餐廳/咖啡廳老闆用的記帳 App，解決手寫記帳本的核心痛點
 > **Features**: Offline-first PWA, Google Sheets sync, dynamic categories, push notifications, GitHub Pages deployment
@@ -56,6 +56,7 @@ Before starting any task:
 - **Push Notifications**: ✅ Complete — Service Worker + Web Push，自訂提醒時間
 - **Deployment**: ✅ GitHub Pages (自動 CI/CD on push to main)
 - **Backend**: ❌ Removed — 無後端伺服器，純前端架構
+- **第 2 次優化（進行中）**: 逐筆交易改造 — **Phase 1 資料層完成**（`Transaction` 型別、Dexie v3 自動遷移、`explodeDailyRecord` 拆解純函式 + Vitest、交易 CRUD/hook）。UI 仍讀舊 `DailyRecord` 彙總模型，Phase 2–6（二級分類 / Sheets 新格式 / FAB 記帳 Sheet / 月曆列表主畫面 / Dashboard 月結重算）尚未接上。分支 `feature/line-item-transactions-redesign`。設計 spec：`docs/superpowers/specs/2026-07-01-line-item-transactions-redesign-design.md`。
 
 ---
 
@@ -75,8 +76,9 @@ Ready-mPOS/
 │       │   ├── CategoriesPage.tsx     # 類別管理（收入/支出）
 │       │   └── OnboardingPage.tsx     # 初次設定引導
 │       ├── hooks/
-│       │   ├── useDailyRecord.ts      # 單日記錄 CRUD
+│       │   ├── useDailyRecord.ts      # 單日記錄 CRUD（舊彙總模型）
 │       │   ├── useMonthlyRecords.ts   # 月份記錄查詢
+│       │   ├── useTransactions.ts     # 逐筆交易查詢（useMonthTransactions / useDayTransactions）
 │       │   └── useSyncService.ts      # Google Sheets 同步服務
 │       ├── components/
 │       │   ├── Icon.tsx               # Lucide-style SVG icon
@@ -86,17 +88,21 @@ Ready-mPOS/
 │       │   ├── categories.ts          # 類別 localStorage CRUD + calcFees
 │       │   ├── notification.ts        # SW 通知工具（權限、sendReminderToSW）
 │       │   ├── tokens.ts              # Design tokens（色彩、字體、圓角）
-│       │   └── fmt.ts                 # NT$ 金額格式化
+│       │   ├── fmt.ts                 # NT$ 金額格式化
+│       │   ├── ids.ts                 # newId() 穩定 ID 產生器
+│       │   ├── migrate.ts             # explodeDailyRecord：舊 DailyRecord→Transaction[] 拆解（純函式）
+│       │   └── transactions.ts        # 逐筆交易 CRUD（add / update / delete）
 │       ├── db/
-│       │   └── index.ts               # Dexie.js IndexedDB schema
+│       │   └── index.ts               # Dexie.js schema（v3：transactions 逐筆交易 store + 自動遷移）
 │       └── types/
-│           └── index.ts               # DailyRecord, Category, SyncStatus
-└── docs/                              # ADR 架構決策紀錄
+│           └── index.ts               # Transaction, DailyRecord, Category（含二級 subs / defaultSubId）, SyncStatus
+└── docs/                              # ADR 架構決策紀錄 + superpowers specs/plans
 ```
 
 ### Frontend (`frontend/`)
 - **Framework**: React + Vite + TypeScript
 - **Offline storage**: Dexie.js (IndexedDB wrapper)
+- **Testing**: Vitest（單元測試，`npm test`）
 - **UI**: Inline styles + design tokens（`tokens.ts`），Cash App / Toss 風格
 - **Cloud sync**: Google Sheets API v4 + Drive API v3 (OAuth2 via GIS)
 - **Notifications**: Service Worker + Web Push Notification API
@@ -119,9 +125,17 @@ Ready-mPOS/
 
 ## 🔑 KEY IMPLEMENTATION NOTES
 
+### 逐筆交易資料層（第 2 次優化 Phase 1）
+- `Transaction` 為新記帳單位（同一天同一類別可多筆）：金額一律正數、收支方向由 `type` 決定，`subId` 為二級類別（`null` = 無）。定義於 `types/index.ts`。
+- **Dexie v3**（`db/index.ts`）：新增 `transactions` store（`++localId, id, date, syncStatus, categoryId`）；upgrade 時用 `explodeDailyRecord` 就地把舊 `dailyRecords` 拆成逐筆交易，**舊 table 保留為後備**（失敗自動回滾）。
+- `explodeDailyRecord`（`lib/migrate.ts`）為**純函式**（不 import Dexie，Vitest 覆蓋）：零金額略過、項目備註帶入、日備註以全形「｜」併入當天第一筆交易；當天無交易則捨棄日備註。
+- `lib/transactions.ts`：`addTransaction / updateTransaction / deleteTransaction`，寫入時設 `syncStatus='PENDING'` 並更新 `updatedAt`。
+- `hooks/useTransactions.ts`：`useMonthTransactions('YYYY-MM')` 以 `date` 前綴查詢（用 `startsWith('YYYY-MM-')` 避免跨月誤配）、`useDayTransactions('YYYY-MM-DD')` 查單日；沿用 `useDailyRecord` 的 `undefined=載入中` 慣例。
+- ⚠️ **目前僅資料層**；UI（帳目頁 / FAB 記帳 Sheet / Dashboard / 月結）仍讀舊模型，待 Phase 2–6 接上。
+
 ### 類別系統（`lib/categories.ts`）
 - 類別儲存在 `localStorage`（key: `mpos_categories`）
-- `Category` 型別：`{ id, name, icon, color, fee?, enabled, type }`
+- `Category` 型別：`{ id, name, icon, color, fee?, enabled, type, subs?, defaultSubId? }`（`subs` / `defaultSubId` 為第 2 次優化新增，二級分類 UI 於 Phase 2 接上）
 - `fee` 為小數（0.3 = 30%），用於外送平台手續費計算
 - `calcFees(record, categories)` — 計算單日總手續費
 - 類別變更後透過 `syncCategories` 同步到 Sheets `_config` tab
@@ -149,6 +163,9 @@ Ready-mPOS/
 ```bash
 # Frontend dev server
 cd frontend && npm run dev
+
+# Unit tests (Vitest)
+cd frontend && npm test
 
 # Type check
 cd frontend && npx tsc --noEmit

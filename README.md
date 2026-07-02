@@ -11,6 +11,7 @@
 | Frontend | React PWA (Vite + TypeScript) |
 | UI | Inline styles + design tokens (Cash App / Toss 風格) |
 | Offline Storage | Dexie.js (IndexedDB) |
+| Testing | Vitest |
 | Cloud Sync | Google Sheets API v4 + Drive API v3 |
 | Auth | Google Identity Services (OAuth2，localStorage token 持久化) |
 | Notifications | Service Worker + Web Push Notification API |
@@ -32,12 +33,12 @@ Ready-mPOS/
 │   └── src/
 │       ├── pages/             # DashboardPage, DailyEntryPage, MonthlyReportPage
 │       │                      # SettingsPage, CategoriesPage, OnboardingPage
-│       ├── hooks/             # useDailyRecord, useSyncService, useMonthlyRecords
-│       ├── lib/               # sheets.ts, categories.ts, notification.ts, tokens.ts, fmt.ts
+│       ├── hooks/             # useDailyRecord, useMonthlyRecords, useTransactions, useSyncService
+│       ├── lib/               # sheets, categories, notification, tokens, fmt, ids, migrate, transactions
 │       ├── components/        # Icon, CategoryEditSheet
-│       ├── db/                # Dexie.js schema
-│       └── types/             # DailyRecord, Category, SyncStatus
-└── docs/                      # ADR 架構決策紀錄
+│       ├── db/                # Dexie.js schema（v3：transactions 逐筆交易 + 自動遷移）
+│       └── types/             # Transaction, DailyRecord, Category（含二級 subs）, SyncStatus
+└── docs/                      # ADR 架構決策紀錄 + superpowers specs/plans
 ```
 
 ## Features
@@ -58,6 +59,7 @@ Ready-mPOS/
 | Google 登入持久化（localStorage token，50 分鐘自動刷新） | ✅ |
 | 打烊提醒推播通知（自訂時間，Service Worker） | ✅ |
 | GitHub Pages 自動部署 | ✅ |
+| 逐筆交易模型 + 月曆列表主畫面 + 二級分類（第 2 次優化） | 🚧 進行中（Phase 1 資料層完成） |
 
 ## Google Sheets 同步
 
@@ -196,3 +198,22 @@ Ready-mPOS/
 - 首頁收入/支出列：值為 0 的類別不顯示
 - 移除「發票 OCR 辨識」設定項
 - 移除記帳頁「拍照記帳」按鈕
+
+---
+
+### 第 2 次優化 — 2026-07-01 起　逐筆交易改造（進行中）
+
+根據真實餐廳老闆回饋，針對兩個核心痛點做第 2 次優化：**(1)** 記帳項目太多、輸入困難；**(2)** 帳目呈現想更簡潔（月曆 + 逐筆列表）。
+
+**設計 spec**：`docs/superpowers/specs/2026-07-01-line-item-transactions-redesign-design.md`
+**分支**：`feature/line-item-transactions-redesign`｜**分 6 期實作**
+
+**Phase 1 — 逐筆交易資料層（✅ 完成）**
+- `Transaction` 型別：改以逐筆交易為記帳單位（同天同類別可多筆），金額正數 + `type` 決定收支，`subId` 為二級類別
+- `Category` 擴充 `subs` / `defaultSubId`（二級分類；UI 於 Phase 2 接上）
+- Dexie **v3**：新增 `transactions` store + upgrade 自動遷移（`explodeDailyRecord` 就地拆解舊 `dailyRecords`），舊 table 保留為後備
+- `explodeDailyRecord` 純函式（Vitest 覆蓋，4/4）：零金額略過、項目備註帶入、日備註以「｜」併入當天第一筆
+- 交易 CRUD（`lib/transactions.ts`）+ 查詢 hook（`hooks/useTransactions.ts`）
+- 導入 Vitest 單元測試框架
+
+**Phase 2–6（規劃中）**：二級分類 UI／Sheets 新格式讀寫＋舊格式偵測改寫／FAB 記帳底部 Sheet／月曆＋逐筆列表新主畫面／Dashboard・月結改用 Transaction 重算。
