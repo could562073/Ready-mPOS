@@ -15,6 +15,10 @@
 3. 執行方式 = superpowers:subagent-driven-development（每 task implementer + reviewer；每期結束 whole-phase review）。
 4. Phase 3–6 的計畫檔不存在時，先用 superpowers:writing-plans 依 spec 寫計畫、commit，再執行。
 5. 業務邏輯一律加繁體中文註解；commit 格式 `feat/fix/docs/refactor: ...`。
+5b. **📚 文檔同步（每期 DoD 必要條件，不可略）**：
+   - **spec / plan 是事實來源**：每期開工前 plan 檔要存在於 `docs/superpowers/plans/`；設計/決策有任何變動 → 當下就改 spec（`docs/superpowers/specs/...`）並在決策日誌記一筆。
+   - **每期落地必同步三份使用者文檔** `CLAUDE.md`、`AGENTS.md`、`README.md`（該期的 docs task 內完成，與程式碼同期），只描述**已落地**的功能、不預先寫未建的。
+   - 中途若有非計畫內的行為/介面改動，也要回頭補進上述文檔，別累積文債。
 6. 遇到需要用戶決策的事（設計歧義、需要 sudo、需要 Google 帳號操作）→ 寫進下方「Blockers / 待用戶決策」，把該 task 標 BLOCKED，**跳過它繼續做不相依的工作**；全部都被擋住才把整體狀態設 BLOCKED。
 7. 不刪任何既有資料/檔案；不改 `.github/workflows`；不動 `.claude/settings*`。
 8. 心跳打進來時如果上一輪工作明顯還在進行（狀態 = IN_PROGRESS 且 git log 幾分鐘內有動），簡短回報後結束該輪，不重複做。
@@ -62,7 +66,7 @@
 
 - **Phase 4/5 UI 切換到讀 `transactions` 時，必須加重新遷移/對帳步驟**（以 `Transaction.id` 去重併入），因為 v3 upgrade 只跑一次、Phase 1–3 期間 UI 仍寫舊 `dailyRecords`。詳見 spec「⚠️ 遷移時序注意」。
 - **Phase 3 完成前絕不能把分支併入 main**（二級分類在那之前不會被 Sheets 同步保留）。
-- 每期落地時同步更新 CLAUDE.md / AGENTS.md / README.md（同一個 commit 或同期 docs commit）。
+- 每期落地時同步更新 CLAUDE.md / AGENTS.md / README.md（同一個 commit 或同期 docs commit）——見 guardrail 5b，這是每期 DoD 必要條件。設計有變動時 spec 也要同步改。
 
 ## 🚧 Blockers / 待用戶決策
 
