@@ -18,6 +18,10 @@
 6. 遇到需要用戶決策的事（設計歧義、需要 sudo、需要 Google 帳號操作）→ 寫進下方「Blockers / 待用戶決策」，把該 task 標 BLOCKED，**跳過它繼續做不相依的工作**；全部都被擋住才把整體狀態設 BLOCKED。
 7. 不刪任何既有資料/檔案；不改 `.github/workflows`；不動 `.claude/settings*`。
 8. 心跳打進來時如果上一輪工作明顯還在進行（狀態 = IN_PROGRESS 且 git log 幾分鐘內有動），簡短回報後結束該輪，不重複做。
+9. **🔴 真實用戶資料保護（最高優先級，Phase 3+）**：
+   a. feature 分支的 `AUTO_SHEET_NAME`（`hooks/useSyncService.ts:22`）**已改為獨立測試名稱**，開發期同步只碰測試試算表，永不碰正式站的「Ready-mPOS 記帳」。**此改動絕不可保留到 main**——見規則 9c。
+   b. Phase 3 任何「舊格式→新格式」改寫**之前**，必須先用 Drive `files.copy` 自動備份整張試算表（時間戳命名），確保可還原。
+   c. **正式上線遷移（cutover）= 硬停，需用戶明確批准**：把 sheet 名稱改回「Ready-mPOS 記帳」、對真實用戶試算表跑遷移，這一步**loop 不得自動執行**；到該步時標 BLOCKED 等用戶。併 main 前檢查：sheet 名稱已改回正式名？遷移有備份保護？以 Transaction.id 去重對帳？
 
 ## ✅ 驗證門檻（每個 task 完成的定義）
 
@@ -62,9 +66,10 @@
 
 ## 🚧 Blockers / 待用戶決策
 
-- **⚠️ 提醒（非阻擋）**：Phase 2 二級分類目前僅存 localStorage，且現況 Sheets 同步邏輯有一個資料流失序列（見決策日誌 D2）。**Phase 3 完成前，請勿在此 feature 分支上「登入 Google 帳號」dogfood 二級功能**——登入後只要記一筆帳觸發 syncAll，剛建的二級會被無 subs 的雲端設定覆蓋清掉。未登入（純本機）使用不受影響。Phase 3 會修掉。
+- **⚠️ 提醒（非阻擋，時效性）**：在 **Phase 3 Task 1（試算表隔離）落地之前**，此 feature 分支仍與正式站共用同一張「Ready-mPOS 記帳」試算表——**請勿在分支上登入 Google 帳號**（會碰到正式資料，且二級會被舊格式同步清掉，見 D2/D3）。Task 1 落地後分支改用獨立測試表，此風險即解除，屆時撤除本提醒。未登入純本機使用一律不受影響。
 
 ## 📝 決策日誌（loop 自行做的判斷，供用戶事後 review）
 
 - **D1（2026-07-03）**：Phase 2 Task 3（docs）純文字更新，controller 自行做未派 subagent/review（fold），因無程式風險。三份文件已一致更新。
-- **D2（2026-07-03）**：Phase 2 全期 review 確認資料流失（Important #1）。真正修正需改 `sheets.ts`，但 Phase 2 Global Constraint 明訂「本期不改 sheets.ts」→ 選擇**不在 Phase 2 加臨時 guard**（避免違反本期 scope，且 Phase 3 即為 Sheets 同步、會正式修掉）。改以：①「不併 main」閘門擋正式曝險；②spec `_config` 段加 🔴 硬性需求（push/pull lockstep、序列化在 clearDirty 前）；③上方 Blockers 提醒用戶勿登入 dogfood。若用戶希望**立刻**加臨時 guard，可回覆，我會在 Phase 3 之前補一個最小防護（例：有 subs 時不清 dirty / 不 push 無 subs config）。
+- **D2（2026-07-03）**：Phase 2 全期 review 確認資料流失（Important #1）。真正修正需改 `sheets.ts`，但 Phase 2 Global Constraint 明訂「本期不改 sheets.ts」→ 選擇**不在 Phase 2 加臨時 guard**（避免違反本期 scope，且 Phase 3 即為 Sheets 同步、會正式修掉）。改以：①「不併 main」閘門擋正式曝險；②spec `_config` 段加 🔴 硬性需求（push/pull lockstep、序列化在 clearDirty 前）；③上方 Blockers 提醒用戶勿登入 dogfool。
+- **D3（2026-07-03，用戶拍板）**：查證 `useSyncService.ts:22` main 與 feature 用同一 `AUTO_SHEET_NAME='Ready-mPOS 記帳'`，`getOrCreateSpreadsheet` 按名搜尋 → 同帳號登入分支會碰到正式站同一張表；`syncAll` 於 App 開啟/連線/登入/記帳自動觸發。**用戶選「改用獨立測試試算表」**：Phase 3 第一個 task 就把分支 `AUTO_SHEET_NAME` 改成獨立測試名，確保開發期碰不到正式資料；+ 改寫前 Drive 備份；+ cutover 硬停等批准（規則 9）。D2 的「登入 dogfool 資料流失」風險因此一併被隔離解掉（分支不再碰正式表）。
