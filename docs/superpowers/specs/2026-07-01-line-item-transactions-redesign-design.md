@@ -100,6 +100,7 @@ interface Category {
   - `subs`：序列化二級清單，格式 `subId:subName|subId:subName`。
   - `defaultSub`：預設二級 id（空 = 無）。
 - push/pull 對這兩欄做序列化/反序列化；缺欄時容錯（視為無二級）。
+- **🔴 Phase 3 必做（Phase 2 全期 review 確認的資料流失修正）**：`pushConfigToSheets` 與 `pullConfigFromSheets` 必須**同步改（lockstep）**，且 `CONFIG_HEADERS` 要新增 `subs`/`defaultSub` 欄；`push` 必須在 `clearCategoriesDirty()` **之前**就把 subs 序列化寫入。否則現況的「push 只寫舊 7 欄 → 清 dirty → 下次 pull 用無 subs 雲端設定覆蓋 localStorage」序列會**清掉使用者剛建立的二級**。此為**同一台已登入裝置、日常動作（記一筆帳即觸發 syncAll）就會發生**的資料流失，非僅跨裝置——Phase 2 期間僅靠「不併 main」閘門擋住正式環境曝險（見下方遷移時序註記）。
 
 ## UI / 資訊架構
 
