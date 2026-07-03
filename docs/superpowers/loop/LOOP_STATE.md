@@ -31,8 +31,10 @@
 
 - **整體**：`IN_PROGRESS`
 - **目前 phase**：Phase 2（二級分類）
-- **下一步**：Task 0（Playwright bootstrap）→ 然後 Phase 2 Task 1
-- **最後更新**：2026-07-03（loop 建立，尚未開始執行）
+- **下一步**：Phase 2 Task 1（`lib/categories.ts` 二級純函式 CRUD + Vitest 6 測試）
+- **最後更新**：2026-07-03（Task 0 Playwright bootstrap 完成，commit 5279bff）
+
+**環境備註**：Playwright 已可用兩路——(1) `@playwright/test` E2E（`npm run test:e2e`，驗證門檻本體）；(2) Playwright MCP（`mcp__playwright__browser_*`，controller 探索式抽查/除錯 UI 用）。chromium binary 已裝。
 
 ## 📋 Phase 進度總表
 
