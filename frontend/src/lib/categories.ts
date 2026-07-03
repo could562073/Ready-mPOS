@@ -1,5 +1,6 @@
 import type { Category } from '../types'
 import type { DailyRecord } from '../types'
+import { newId } from './ids'
 
 const LS_KEY   = 'mpos_categories'
 // 本機類別已修改但尚未同步到 Sheets 的旗標
@@ -82,3 +83,29 @@ export const ICON_OPTIONS = [
 export const COLOR_OPTIONS = [
   'mint', 'sky', 'lavender', 'pink', 'peach', 'coral', 'sun',
 ]
+
+// 二級分類型別（繼承一級 icon/color/fee，本身只有 id/name）
+export type Sub = { id: string; name: string }
+
+// 新增二級分類（回傳新 Category，不 mutate 原物件）
+export function addSub(cat: Category, name: string, makeId: () => string = newId): Category {
+  const sub: Sub = { id: makeId(), name: name.trim() }
+  return { ...cat, subs: [...(cat.subs ?? []), sub] }
+}
+
+// 改名指定二級分類（即時輸入不 trim，trim 交給儲存時正規化）
+export function renameSub(cat: Category, subId: string, name: string): Category {
+  return { ...cat, subs: (cat.subs ?? []).map(s => (s.id === subId ? { ...s, name } : s)) }
+}
+
+// 刪除指定二級分類；若它正是預設二級，一併清除 defaultSubId
+export function deleteSub(cat: Category, subId: string): Category {
+  const subs = (cat.subs ?? []).filter(s => s.id !== subId)
+  const defaultSubId = cat.defaultSubId === subId ? null : cat.defaultSubId
+  return { ...cat, subs, defaultSubId }
+}
+
+// 設定預設二級（null = 無）
+export function setDefaultSub(cat: Category, subId: string | null): Category {
+  return { ...cat, defaultSubId: subId }
+}
