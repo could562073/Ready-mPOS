@@ -59,7 +59,7 @@ Ready-mPOS/
 | Google 登入持久化（localStorage token，50 分鐘自動刷新） | ✅ |
 | 打烊提醒推播通知（自訂時間，Service Worker） | ✅ |
 | GitHub Pages 自動部署 | ✅ |
-| 逐筆交易模型 + 月曆列表主畫面 + 二級分類（第 2 次優化） | 🚧 進行中（Phase 1 資料層完成） |
+| 逐筆交易模型 + 月曆列表主畫面 + 二級分類（第 2 次優化） | 🚧 進行中（Phase 1 資料層 + Phase 2 二級分類完成） |
 
 ## Google Sheets 同步
 
@@ -216,4 +216,11 @@ Ready-mPOS/
 - 交易 CRUD（`lib/transactions.ts`）+ 查詢 hook（`hooks/useTransactions.ts`）
 - 導入 Vitest 單元測試框架
 
-**Phase 2–6（規劃中）**：二級分類 UI／Sheets 新格式讀寫＋舊格式偵測改寫／FAB 記帳底部 Sheet／月曆＋逐筆列表新主畫面／Dashboard・月結改用 Transaction 重算。
+**Phase 2 — 二級分類（✅ 完成）**
+- 二級分類純函式 CRUD（`addSub / renameSub / deleteSub / setDefaultSub`，不 mutate、Vitest 覆蓋）：一級（如「雜項」）下可加二級（如「瓦斯費」），二級**繼承**一級 icon/color/fee
+- 可設**預設二級**（`defaultSubId`，含「無」）；`deleteSub` 刪到預設時自動歸零
+- 管理 UI 在 `CategoryEditSheet` 內（設定→類別→編輯→「二級分類」區），儲存時 trim + 去空名
+- Playwright E2E 覆蓋新增/改名/設預設/刪除/持久化完整流程
+- ⚠️ 二級目前**僅存 localStorage**，跨裝置 Sheets 同步待 Phase 3
+
+**Phase 3–6（規劃中）**：Sheets 新格式讀寫＋舊格式偵測改寫＋`_config` 二級序列化／FAB 記帳底部 Sheet／月曆＋逐筆列表新主畫面／Dashboard・月結改用 Transaction 重算。

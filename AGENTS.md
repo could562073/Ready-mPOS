@@ -56,7 +56,7 @@ Before starting any task:
 - **Push Notifications**: ✅ Complete — Service Worker + Web Push，自訂提醒時間
 - **Deployment**: ✅ GitHub Pages (自動 CI/CD on push to main)
 - **Backend**: ❌ Removed — 無後端伺服器，純前端架構
-- **第 2 次優化（進行中）**: 逐筆交易改造 — **Phase 1 資料層完成**（`Transaction` 型別、Dexie v3 自動遷移、`explodeDailyRecord` 拆解純函式 + Vitest、交易 CRUD/hook）。UI 仍讀舊 `DailyRecord` 彙總模型，Phase 2–6（二級分類 / Sheets 新格式 / FAB 記帳 Sheet / 月曆列表主畫面 / Dashboard 月結重算）尚未接上。分支 `feature/line-item-transactions-redesign`。設計 spec：`docs/superpowers/specs/2026-07-01-line-item-transactions-redesign-design.md`。
+- **第 2 次優化（進行中）**: 逐筆交易改造 — **Phase 1 資料層 + Phase 2 二級分類完成**。Phase 1：`Transaction` 型別、Dexie v3 自動遷移、`explodeDailyRecord` 拆解純函式 + Vitest、交易 CRUD/hook。Phase 2：二級分類純函式 CRUD（`addSub/renameSub/deleteSub/setDefaultSub`）+ `CategoryEditSheet` 內管理 UI + Playwright E2E；⚠️ 二級目前**僅存 localStorage**，Sheets `_config` 同步待 Phase 3（Phase 3 完成前不併 main）。UI 主畫面仍讀舊 `DailyRecord` 彙總模型，Phase 3–6（Sheets 新格式 / FAB 記帳 Sheet / 月曆列表主畫面 / Dashboard 月結重算）尚未接上。分支 `feature/line-item-transactions-redesign`。設計 spec：`docs/superpowers/specs/2026-07-01-line-item-transactions-redesign-design.md`。
 
 ---
 
@@ -135,7 +135,8 @@ Ready-mPOS/
 
 ### 類別系統（`lib/categories.ts`）
 - 類別儲存在 `localStorage`（key: `mpos_categories`）
-- `Category` 型別：`{ id, name, icon, color, fee?, enabled, type, subs?, defaultSubId? }`（`subs` / `defaultSubId` 為第 2 次優化新增，二級分類 UI 於 Phase 2 接上）
+- `Category` 型別：`{ id, name, icon, color, fee?, enabled, type, subs?, defaultSubId? }`
+- **二級分類（第 2 次優化 Phase 2 完成）**：`subs: { id, name }[]`（二級**繼承**一級 icon/color/fee，本身只有 id/name）、`defaultSubId: string|null`（記帳時預設帶入，`null` = 無）。純函式 CRUD `addSub / renameSub / deleteSub / setDefaultSub`（不 mutate、回傳新 `Category`；`deleteSub` 刪到預設二級時自動清 `defaultSubId`），Vitest 覆蓋。管理 UI 在 `CategoryEditSheet` 內（點類別→編輯→「二級分類」區），儲存時 trim + 去空名 + 修正失效的 `defaultSubId`。⚠️ 目前僅本機 localStorage，Sheets `_config` 序列化待 Phase 3；「記帳時自動帶入預設二級」待 Phase 4。
 - `fee` 為小數（0.3 = 30%），用於外送平台手續費計算
 - `calcFees(record, categories)` — 計算單日總手續費
 - 類別變更後透過 `syncCategories` 同步到 Sheets `_config` tab
