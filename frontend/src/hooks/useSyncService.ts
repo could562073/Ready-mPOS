@@ -40,13 +40,19 @@ export function useSyncService() {
   useEffect(() => {
     let refreshTimer: ReturnType<typeof setInterval>
 
+    // 🔴 安全守衛（同步執行於 mount，必須在 init() 之外的 effect 頂層）：
+    // 若已儲存的試算表名稱與目前 AUTO_SHEET_NAME 不符（分支切換或 cutover 改名），
+    // 清掉舊試算表指標，強制下次登入依新名稱重新解析，避免沿用到別張表（含正式站）。
+    // 一次性自我修復：清除後 LS_SHEET_NAME 變空，之後載入不再誤觸；此亦為 cutover 改名的預期行為。
+    // ⚠️ 為何放這裡而非 init()：init() 在 GIS 未就緒時會被延到 300ms 輪詢，
+    //    而下方 syncAll-on-mount effect 會立即以 localStorage 還原的 token 觸發同步；
+    //    若守衛留在 init 內，冷啟動時 syncAll 可能搶先碰到殘留的正式站指標一次（競態）。
+    const storedName = getStoredSheetName()
+    if (storedName && storedName !== AUTO_SHEET_NAME) {
+      clearSpreadsheet()
+    }
+
     const init = () => {
-      // 安全守衛：若已儲存的試算表名稱與目前 AUTO_SHEET_NAME 不符（分支切換或 cutover 改名），
-      // 清掉舊試算表指標，強制下次登入依新名稱重新解析，避免沿用到別張表（含正式站）。
-      const storedName = getStoredSheetName()
-      if (storedName && storedName !== AUTO_SHEET_NAME) {
-        clearSpreadsheet()
-      }
       initGoogleAuth()
       if (getSignedInEmail()) {
         warmToken().catch(() => {})

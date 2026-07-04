@@ -131,7 +131,7 @@ Ready-mPOS/
 - `explodeDailyRecord`（`lib/migrate.ts`）為**純函式**（不 import Dexie，Vitest 覆蓋）：零金額略過、項目備註帶入、日備註以全形「｜」併入當天第一筆交易；當天無交易則捨棄日備註。
 - `lib/transactions.ts`：`addTransaction / updateTransaction / deleteTransaction`，寫入時設 `syncStatus='PENDING'` 並更新 `updatedAt`。
 - `hooks/useTransactions.ts`：`useMonthTransactions('YYYY-MM')` 以 `date` 前綴查詢（用 `startsWith('YYYY-MM-')` 避免跨月誤配）、`useDayTransactions('YYYY-MM-DD')` 查單日；沿用 `useDailyRecord` 的 `undefined=載入中` 慣例。
-- ⚠️ **目前僅資料層**；UI（帳目頁 / FAB 記帳 Sheet / Dashboard / 月結）仍讀舊模型，待 Phase 2–6 接上。
+- ⚠️ **UI 主畫面仍讀舊 `DailyRecord` 模型**（帳目頁 / FAB 記帳 Sheet / Dashboard / 月結），待 Phase 4–6 切換到 `transactions`（Phase 1–3 已完成資料層 / 二級 / `_config` 同步）。
 
 ### 類別系統（`lib/categories.ts`）
 - 類別儲存在 `localStorage`（key: `mpos_categories`）
