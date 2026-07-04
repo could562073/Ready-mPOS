@@ -1,5 +1,7 @@
-import type { DailyRecord, Category } from '../types'
+import type { DailyRecord, Category, Transaction } from '../types'
 import { applyCloudCategories, isCategoriesDirty, clearCategoriesDirty, serializeSubs, parseSubs } from './categories'
+import { TX_MONTH_HEADERS, isNewTxFormat, txToRow, rowToTx, type TxSeed } from './txSheets'
+import { explodeDailyRecord } from './migrate'
 
 const CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) || ''
 
@@ -10,6 +12,8 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
   // Drive metadata 僅用於搜尋同名試算表，確保跨裝置使用同一份檔案
   'https://www.googleapis.com/auth/drive.metadata.readonly',
+  // 備份需寫入權限；試算表由本 app 建立，drive.file 即涵蓋（不需存取使用者其他檔案）
+  'https://www.googleapis.com/auth/drive.file',
 ].join(' ')
 
 const LS_EMAIL      = 'gsheets_email'
@@ -384,6 +388,50 @@ function recordToRow(r: DailyRecord, categories: Category[]): (string | number)[
 
 // ── 核心同步函式 ───────────────────────────────────────────
 
+// 舊彙總格式：單一月份分頁 rows → DailyRecord[]（沿用既有解析：未知欄位略過、項目備註反解析）
+export function parseOldMonthRows(rows: string[][], categories: Category[]): DailyRecord[] {
+  const now = new Date().toISOString()
+  const catByName = new Map(categories.map(c => [c.name, c]))
+  const out: DailyRecord[] = []
+  if (rows.length < 2) return out
+  const header = rows[0]
+  for (const row of rows.slice(1)) {
+    const date = row[header.indexOf(COL_DATE)]
+    if (!date) continue
+    const incomes: Record<string, number> = {}
+    const expenses: Record<string, number> = {}
+    header.forEach((colName, i) => {
+      if (FIXED_COLS.has(colName)) return
+      const val = Number(row[i]) || 0
+      if (val === 0) return
+      const cat = catByName.get(colName)
+      if (cat?.type === 'expense') expenses[cat.id] = val
+      else if (cat) incomes[cat.id] = val
+    })
+    const incomeNotes: Record<string, string> = {}
+    const expenseNotes: Record<string, string> = {}
+    const rawItemNotes = (row[header.indexOf(COL_ITEM_NOTES)] ?? '').trim()
+    if (rawItemNotes) {
+      for (const part of rawItemNotes.split(';')) {
+        const sep = part.indexOf(':')
+        if (sep < 1) continue
+        const catName = part.slice(0, sep).trim()
+        const noteVal = part.slice(sep + 1).trim()
+        if (!noteVal) continue
+        const cat = catByName.get(catName)
+        if (cat?.type === 'expense') expenseNotes[cat.id] = noteVal
+        else if (cat) incomeNotes[cat.id] = noteVal
+      }
+    }
+    out.push({
+      date, incomes, expenses, incomeNotes, expenseNotes,
+      notes: row[header.indexOf(COL_NOTES)] ?? '',
+      syncStatus: 'SYNCED', createdAt: now, updatedAt: now,
+    })
+  }
+  return out
+}
+
 // 從雲端試算表還原所有月份資料
 // 需傳入 categories（先呼叫 pullConfigFromSheets 取得），以正確分類 income / expense
 export async function pullAllFromSheets(spreadsheetId: string, categories: Category[]): Promise<DailyRecord[]> {
@@ -391,10 +439,6 @@ export async function pullAllFromSheets(spreadsheetId: string, categories: Categ
   const titles = await getSheetTitles(spreadsheetId, token)
   const monthTabs = titles.filter(t => /^\d{4}-\d{2}$/.test(t))
   const records: DailyRecord[] = []
-  const now = new Date().toISOString()
-
-  // 建立 category name → {id, type} 對照表，用於解析歷史欄位
-  const catByName = new Map(categories.map(c => [c.name, c]))
 
   for (const month of monthTabs) {
     const data = await sheetsGet<{ values?: string[][] }>(
@@ -405,60 +449,82 @@ export async function pullAllFromSheets(spreadsheetId: string, categories: Categ
     const rows = data.values ?? []
     if (rows.length < 2) continue
 
-    const header = rows[0]
-
-    for (const row of rows.slice(1)) {
-      const date = row[header.indexOf(COL_DATE)]
-      if (!date) continue
-
-      const incomes:  Record<string, number> = {}
-      const expenses: Record<string, number> = {}
-
-      header.forEach((colName, i) => {
-        if (FIXED_COLS.has(colName)) return
-        const val = Number(row[i]) || 0
-        if (val === 0) return
-        const cat = catByName.get(colName)
-        if (cat?.type === 'expense') {
-          expenses[cat.id] = val
-        } else if (cat) {
-          incomes[cat.id] = val
-        }
-        // 找不到對應類別的欄位直接略過，避免污染 incomes 造成金額虛增
-      })
-
-      // 反向解析項目備註欄：「類別名:備註;類別名:備註」→ incomeNotes / expenseNotes
-      const incomeNotes:  Record<string, string> = {}
-      const expenseNotes: Record<string, string> = {}
-      const rawItemNotes = (row[header.indexOf(COL_ITEM_NOTES)] ?? '').trim()
-      if (rawItemNotes) {
-        for (const part of rawItemNotes.split(';')) {
-          const sep = part.indexOf(':')
-          if (sep < 1) continue
-          const catName = part.slice(0, sep).trim()
-          const noteVal = part.slice(sep + 1).trim()
-          if (!noteVal) continue
-          const cat = catByName.get(catName)
-          if (cat?.type === 'expense') expenseNotes[cat.id] = noteVal
-          else if (cat) incomeNotes[cat.id] = noteVal
-        }
-      }
-
-      records.push({
-        date,
-        incomes,
-        expenses,
-        incomeNotes,
-        expenseNotes,
-        notes:      row[header.indexOf(COL_NOTES)] ?? '',
-        syncStatus: 'SYNCED',
-        createdAt:  now,
-        updatedAt:  now,
-      })
-    }
+    records.push(...parseOldMonthRows(rows, categories))
   }
 
   return records
+}
+
+// 舊→新格式改寫前的安全備份：整份試算表複製一份（時間戳命名），回傳備份檔 id
+export async function backupSpreadsheet(spreadsheetId: string): Promise<string> {
+  const token = await acquireToken()
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}/copy`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: `Ready-mPOS 備份 ${stamp}` }),
+  })
+  if (!res.ok) {
+    const msg = await res.text().catch(() => '')
+    throw new Error(`備份試算表失敗：${res.status} ${msg}`)
+  }
+  const data = (await res.json()) as { id: string }
+  return data.id
+}
+
+// 讀所有月份分頁 → 交易 seeds；同時回報哪些分頁仍是舊格式（需改寫）
+export async function pullAllTransactionsFromSheets(
+  spreadsheetId: string, categories: Category[],
+): Promise<{ seeds: TxSeed[]; oldFormatMonths: string[] }> {
+  const token = await acquireToken()
+  const titles = await getSheetTitles(spreadsheetId, token)
+  const monthTabs = titles.filter(t => /^\d{4}-\d{2}$/.test(t))
+  const catByName = new Map(categories.map(c => [c.name, c]))
+  const now = new Date().toISOString()
+  const seeds: TxSeed[] = []
+  const oldFormatMonths: string[] = []
+
+  for (const month of monthTabs) {
+    const data = await sheetsGet<{ values?: string[][] }>(
+      `/${spreadsheetId}/values/${encodeURIComponent(month + '!A1:ZZ')}`, token,
+    ).catch(() => ({ values: undefined }))
+    const rows = data.values ?? []
+    if (rows.length < 2) continue
+    const header = rows[0]
+
+    if (isNewTxFormat(header)) {
+      for (const row of rows.slice(1)) {
+        const seed = rowToTx(row, header, catByName, now)
+        if (seed) seeds.push(seed)
+      }
+    } else {
+      // 舊彙總格式：解析成 DailyRecord 再逐筆拆解為交易，並標記此月需改寫
+      oldFormatMonths.push(month)
+      for (const rec of parseOldMonthRows(rows, categories)) {
+        for (const s of explodeDailyRecord(rec)) seeds.push(s)
+      }
+    }
+  }
+  return { seeds, oldFormatMonths }
+}
+
+// 將某月所有交易以新格式整批覆蓋寫入（先 clear 再 put，天然去除筆數變動殘留）
+export async function syncMonthTransactionsToSheets(
+  spreadsheetId: string, month: string, txs: (Transaction | TxSeed)[], categories: Category[],
+): Promise<void> {
+  const token = await acquireToken()
+  await ensureSheet(spreadsheetId, month, token)
+  const catById = new Map(categories.map(c => [c.id, c]))
+  const values: (string | number)[][] = [
+    [...TX_MONTH_HEADERS],
+    ...txs.map(t => txToRow(t, catById)),
+  ]
+  await sheetsValuesClear(spreadsheetId, month, token)
+  await sheetsPut(
+    `/${spreadsheetId}/values/${encodeURIComponent(month + '!A1')}?valueInputOption=USER_ENTERED`,
+    { range: `${month}!A1`, majorDimension: 'ROWS', values },
+    token,
+  )
 }
 
 // 將某月所有記錄整批寫入 Google Sheets（覆蓋式）
