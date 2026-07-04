@@ -127,7 +127,11 @@ export function useSyncService() {
         }
       }
 
-      const monthsToRewrite = new Set<string>(pendingMonths)
+      // 🔴 備份失敗（allowOldRewrite=false）時，凡屬舊格式的月份一律排除——即使該月有本機 PENDING，
+      //    也不得在無成功備份下 clear+覆蓋舊格式分頁（否則毀掉使用者原始彙總資料）。
+      //    v3 遷移把所有歷史交易標為 PENDING，故 cutover 時 pendingMonths ⊇ 全部歷史舊格式月份，此保護為主場景。
+      const monthsToRewrite = new Set<string>()
+      for (const m of pendingMonths) if (allowOldRewrite || !oldSet.has(m)) monthsToRewrite.add(m)
       if (allowOldRewrite) for (const m of oldSet) monthsToRewrite.add(m)
 
       for (const month of monthsToRewrite) {
