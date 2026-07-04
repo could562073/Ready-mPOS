@@ -221,6 +221,11 @@ Ready-mPOS/
 - 可設**預設二級**（`defaultSubId`，含「無」）；`deleteSub` 刪到預設時自動歸零
 - 管理 UI 在 `CategoryEditSheet` 內（設定→類別→編輯→「二級分類」區），儲存時 trim + 去空名
 - Playwright E2E 覆蓋新增/改名/設預設/刪除/持久化完整流程
-- ⚠️ 二級目前**僅存 localStorage**，跨裝置 Sheets 同步待 Phase 3
 
-**Phase 3–6（規劃中）**：Sheets 新格式讀寫＋舊格式偵測改寫＋`_config` 二級序列化／FAB 記帳底部 Sheet／月曆＋逐筆列表新主畫面／Dashboard・月結改用 Transaction 重算。
+**Phase 3 — Sheets `_config` 二級同步 + 隔離（✅ 完成）**
+- 二級經 `_config` 的 `subs`/`defaultSub` 兩欄跨裝置同步（`serializeSubs`/`parseSubs`，`id:encodeURIComponent(name)`、`|` 分隔，Vitest 覆蓋）
+- 修正 Phase 2 揪出的資料流失：push/pull lockstep 帶二級，push 在清 dirty **前**序列化；舊 7 欄 `_config` pull 容錯
+- 🔒 開發安全：feature 分支同步隔離到獨立測試試算表，開發期不碰正式站資料（併 main 前改回正式名）
+- ⚠️ 月份分頁新格式讀寫／舊格式偵測改寫／Drive 備份移至 Phase 5（與 UI 切換同期，才能端到端驗證）
+
+**Phase 4–6（規劃中）**：FAB 記帳底部 Sheet（自動帶入預設二級）／月曆＋逐筆列表新主畫面＋月份分頁 Transaction 新格式／Dashboard・月結改用 Transaction 重算。

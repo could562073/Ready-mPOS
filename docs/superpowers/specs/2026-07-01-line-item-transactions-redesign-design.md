@@ -162,12 +162,14 @@ interface Category {
 
 1. **資料層 + 遷移**：`Transaction` 型別、Dexie v3 遷移、交易 CRUD hook。
 2. **類別二級**：`Category` 擴充、`lib/categories` 二級 CRUD、`CategoriesPage` UI。
-3. **Sheets 同步**：新格式讀寫、舊格式偵測改寫、`_config` 擴充。
+3. **Sheets 同步（`_config`）**：`_config` 的 `subs`/`defaultSub` 序列化擴充 + 資料流失修正 + feature 分支試算表隔離。
 4. **記帳輸入 Sheet**：FAB + 新增/編輯交易 Sheet。
-5. **帳目頁（月曆+列表）+ 導覽/落地頁調整**。
+5. **帳目頁（月曆+列表）+ 導覽/落地頁調整 + 月份分頁新格式**：含月份分頁 Transaction 新格式讀寫、舊格式偵測改寫、Drive 備份、Transaction.id 對帳。
 6. **Dashboard / 月結重算**：改用 Transaction。
 
 每階段可獨立跑、可 commit、可驗證。
+
+> **📌 分期調整（2026-07-04，決策 D4）**：原 Phase 3 含「月份分頁新格式讀寫 + 舊格式偵測改寫」，但現況 `syncAll` 仍同步舊 `DailyRecord`、UI 到 Phase 4/5 才改寫 `transactions`；若 Phase 3 就切月份分頁為 Transaction 新格式，會使 UI 新記的 DailyRecord 不再被同步而破壞現有 App。故**月份分頁新格式 / 舊格式偵測改寫 / Drive 備份改列入 Phase 5**（與 UI 切換 + `Transaction.id` 對帳同期，才能端到端驗證）。Phase 3 收斂為 `_config` 二級同步 + 資料流失修正 + 試算表隔離。詳見 `docs/superpowers/loop/LOOP_STATE.md` 決策日誌 D4。
 
 ### ⚠️ 遷移時序注意（Phase 4/5 UI 切換必做）
 
