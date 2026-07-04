@@ -15,11 +15,16 @@ import {
   setSpreadsheetId,
   syncMonthToSheets,
   clearIfInvalidSpreadsheet,
+  clearSpreadsheet,
+  getStoredSheetName,
 } from '../lib/sheets'
 import { getCategories, isCategoriesDirty, clearCategoriesDirty } from '../lib/categories'
 import type { Category } from '../types'
 
-const AUTO_SHEET_NAME = 'Ready-mPOS 記帳'
+// ⚠️ DEV-ONLY（feature/line-item-transactions-redesign 分支隔離）：
+//    開發期用獨立測試試算表，確保絕不碰正式站的「Ready-mPOS 記帳」。
+//    🔴 併 main 前務必改回 'Ready-mPOS 記帳'（見 LOOP_STATE guardrail 9c / cutover）。
+const AUTO_SHEET_NAME = 'Ready-mPOS 記帳（逐筆交易測試）'
 
 export function useSyncService() {
   const [syncing, setSyncing]         = useState(false)
@@ -36,6 +41,12 @@ export function useSyncService() {
     let refreshTimer: ReturnType<typeof setInterval>
 
     const init = () => {
+      // 安全守衛：若已儲存的試算表名稱與目前 AUTO_SHEET_NAME 不符（分支切換或 cutover 改名），
+      // 清掉舊試算表指標，強制下次登入依新名稱重新解析，避免沿用到別張表（含正式站）。
+      const storedName = getStoredSheetName()
+      if (storedName && storedName !== AUTO_SHEET_NAME) {
+        clearSpreadsheet()
+      }
       initGoogleAuth()
       if (getSignedInEmail()) {
         warmToken().catch(() => {})

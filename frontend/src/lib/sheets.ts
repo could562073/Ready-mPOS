@@ -160,6 +160,8 @@ export async function getOrCreateSpreadsheet(title: string, initialSheetTitle?: 
 
 export const getSignedInEmail  = (): string | null => localStorage.getItem(LS_EMAIL)
 export const getSpreadsheetId  = (): string => localStorage.getItem(LS_SHEET_ID) ?? ''
+// 回傳已儲存的試算表名稱（跨裝置解析用）；空字串 = 尚未儲存
+export const getStoredSheetName = (): string => localStorage.getItem(LS_SHEET_NAME) ?? ''
 
 export const setSpreadsheetId = (id: string, name?: string): void => {
   localStorage.setItem(LS_SHEET_ID, id)
