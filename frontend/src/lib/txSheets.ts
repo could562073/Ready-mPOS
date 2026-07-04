@@ -28,3 +28,49 @@ export function txToRow(tx: Transaction | TxSeed, catById: Map<string, Category>
     tx.id,
   ]
 }
+
+// Sheets 列 → 交易 seed；名稱對回 Category id，找不到則保留原始名稱字串（未知類別，不丟資料）
+// 缺 id 或缺日期視為無效列，回 null 讓呼叫端略過
+export function rowToTx(
+  row: string[], header: string[], catByName: Map<string, Category>, now: string,
+): TxSeed | null {
+  const g = (col: string) => row[header.indexOf(col)]
+  const date = (g('日期') ?? '').trim()
+  const id   = (g('id') ?? '').trim()
+  if (!date || !id) return null
+
+  const type: 'income' | 'expense' = g('收支') === '支出' ? 'expense' : 'income'
+  const primaryName = (g('一級類別') ?? '').trim()
+  const cat = catByName.get(primaryName)
+  const categoryId = cat?.id ?? primaryName            // 未知一級 → 保留原名
+  const subName = (g('二級類別') ?? '').trim()
+  const subId = subName && cat ? (cat.subs?.find(s => s.name === subName)?.id ?? null) : null
+  const note = (g('備註') ?? '').trim()
+
+  return {
+    id, date, type, categoryId, subId,
+    amount: Number(g('金額')) || 0,
+    note: note || undefined,
+    syncStatus: 'SYNCED',
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+export interface TxMergePlan {
+  toAdd: TxSeed[]
+  toUpdate: { localId: number; seed: TxSeed }[]
+}
+
+// 以 Transaction.id 去重對帳：雲端無對應 → 新增；本機 SYNCED 同 id → 以雲端覆蓋；本機 PENDING 同 id → 保留本機修改
+export function mergeTransactionsById(local: Transaction[], remote: TxSeed[]): TxMergePlan {
+  const byId = new Map(local.map(t => [t.id, t]))
+  const toAdd: TxSeed[] = []
+  const toUpdate: { localId: number; seed: TxSeed }[] = []
+  for (const r of remote) {
+    const l = byId.get(r.id)
+    if (!l) toAdd.push(r)
+    else if (l.syncStatus === 'SYNCED' && l.localId !== undefined) toUpdate.push({ localId: l.localId, seed: r })
+  }
+  return { toAdd, toUpdate }
+}
