@@ -34,7 +34,7 @@ Ready-mPOS/
 │       ├── pages/             # DashboardPage, LedgerPage, DailyEntryPage(舊), MonthlyReportPage
 │       │                      # SettingsPage, CategoriesPage, OnboardingPage
 │       ├── hooks/             # useDailyRecord, useMonthlyRecords, useTransactions, useSyncService
-│       ├── lib/               # sheets, categories, notification, tokens, fmt, ids, migrate, txDraft, transactions
+│       ├── lib/               # sheets, categories, notification, tokens, fmt, ids, migrate, txDraft, txSheets, transactions
 │       ├── components/        # Icon, TransactionSheet, CategoryEditSheet
 │       ├── db/                # Dexie.js schema（v3：transactions 逐筆交易 + 自動遷移）
 │       └── types/             # Transaction, DailyRecord, Category（含二級 subs）, SyncStatus
@@ -59,7 +59,7 @@ Ready-mPOS/
 | Google 登入持久化（localStorage token，50 分鐘自動刷新） | ✅ |
 | 打烊提醒推播通知（自訂時間，Service Worker） | ✅ |
 | GitHub Pages 自動部署 | ✅ |
-| 逐筆交易模型 + 月曆列表主畫面 + 二級分類（第 2 次優化） | 🚧 進行中（Phase 1 資料層 + Phase 2 二級分類完成） |
+| 逐筆交易模型 + 月曆列表主畫面 + 二級分類（第 2 次優化） | 🚧 進行中（Phase 1–5 完成：資料層／二級分類／記帳 UI／雲端同步；月曆落地頁 Phase 6、Dashboard/月結重算 Phase 7 待做） |
 
 ## Google Sheets 同步
 
@@ -232,6 +232,14 @@ Ready-mPOS/
 - 「記帳」tab 改用 `LedgerPage`：單日逐筆交易列表 + 右下浮動「＋」FAB
 - `TransactionSheet` 底部 Sheet：收支切換 / 一級類別 / 二級（自動帶入預設，`resolveDefaultSub` 防 dangling）/ 金額 / 備註 / 日期 / 「儲存並繼續」連續記帳 / 編輯可刪
 - 寫入本機 `transactions`；Playwright E2E 覆蓋新增/預設二級/儲存並繼續/編輯/刪除/重整持久
-- ⚠️ Dashboard・月結・雲端同步仍為 `DailyRecord`，待 Phase 5/6 收斂（開發分支暫時分歧，見設計 spec）
+- ⚠️ Dashboard・月結・雲端同步仍為 `DailyRecord`，待 Phase 5（雲端同步）與 Phase 6/7（月曆落地頁／Dashboard・月結重算）收斂（開發分支暫時分歧，見設計 spec）
 
-**Phase 5–6（規劃中）**：月曆＋逐筆列表落地頁＋月份分頁 Transaction 新格式＋舊格式偵測改寫＋`Transaction.id` 對帳／Dashboard・月結改用 Transaction 重算。
+**Phase 5 — 逐筆交易雲端同步（✅ 完成）**
+- 月份分頁改為新格式：一列一筆交易 `日期|收支|一級類別|二級類別|金額|備註|id`，表頭固定不隨類別增減變動；`lib/txSheets.ts` 純函式（`isNewTxFormat`/`txToRow`/`rowToTx`/`mergeTransactionsById`）Vitest 覆蓋
+- `pullAllTransactionsFromSheets` 逐月偵測新舊格式：舊彙總格式用抽出的純函式 `parseOldMonthRows` + `explodeDailyRecord` 就地拆成交易並標記待改寫；`syncMonthTransactionsToSheets` 對新格式月份整表覆蓋寫回
+- `backupSpreadsheet`：改寫任何舊格式分頁前，先用 Drive `files.copy` 建立時間戳備份副本（`SCOPES` 新增 `drive.file`，既有使用者需重新授權）；🔒 備份失敗則本輪同步跳過所有舊格式改寫，即使該月同時有本機待同步交易也不動
+- `useSyncService.ts` 的 `syncAll`/`restoreFromSheets`/`clearLocalData` 全面切換到 `db.transactions`，以 `Transaction.id` 去重對帳（本機 `PENDING` 優先）
+- ⚠️ 已知 cutover 限制：cutover 首次同步時，本機遷移交易與雲端 re-explode 出的同批交易隨機 id 不同，會被誤判為不同筆而重複，cutover 前需先解（見設計 spec）
+- ⚠️ Dashboard・月結仍讀 `DailyRecord`，待 Phase 7；月曆落地頁待 Phase 6
+
+**Phase 6–7（規劃中）**：Phase 6 — 帳目頁月曆＋逐筆列表落地頁、導覽調整；Phase 7 — Dashboard・月結改用 Transaction 重算，移除對 `DailyRecord` 的讀取依賴。
