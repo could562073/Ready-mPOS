@@ -7,17 +7,19 @@ import {
   signIn as googleSignIn,
   signOut as googleSignOut,
   getOrCreateSpreadsheet,
-  pullAllFromSheets,
+  pullAllTransactionsFromSheets,
   pullConfigFromSheets,
   pushConfigToSheets,
   getSignedInEmail,
   getSpreadsheetId,
   setSpreadsheetId,
-  syncMonthToSheets,
+  syncMonthTransactionsToSheets,
+  backupSpreadsheet,
   clearIfInvalidSpreadsheet,
   clearSpreadsheet,
   getStoredSheetName,
 } from '../lib/sheets'
+import { mergeTransactionsById } from '../lib/txSheets'
 import { getCategories, isCategoriesDirty, clearCategoriesDirty } from '../lib/categories'
 import type { Category } from '../types'
 
@@ -98,34 +100,43 @@ export function useSyncService() {
       const cloudCategories = await pullConfigFromSheets(sheetId)
       const categories = cloudCategories ?? getCategories()
 
-      // ── Phase 1: Pull（Sheets → 本機） ────────────────────
-      // SYNCED 記錄以 Sheets 為主；PENDING 保留本機修改
-      const sheetsRecords = await pullAllFromSheets(sheetId, categories)
-      for (const r of sheetsRecords) {
-        const local = await db.dailyRecords.where('date').equals(r.date).first()
-        if (!local) {
-          await db.dailyRecords.add(r)
-        } else if (local.syncStatus === 'SYNCED') {
-          await db.dailyRecords.update(local.id!, { ...r, id: local.id })
+      // ── Pull：Sheets → 本機 transactions（以 Transaction.id 去重對帳） ──
+      // SYNCED 交易以雲端為主；PENDING 本機修改優先，不覆蓋（mergeTransactionsById 已處理判斷）
+      const { seeds, oldFormatMonths } = await pullAllTransactionsFromSheets(sheetId, categories)
+      const localTx = await db.transactions.toArray()
+      const plan = mergeTransactionsById(localTx, seeds)
+      if (plan.toAdd.length) await db.transactions.bulkAdd(plan.toAdd)
+      for (const u of plan.toUpdate) await db.transactions.update(u.localId, u.seed)
+
+      // ── Push：本機 PENDING 交易 → Sheets（連同需改寫的舊格式月份一起重寫） ──
+      const pendingTx = await db.transactions.where('syncStatus').equals('PENDING').toArray()
+
+      // 需要改寫的月份 = 舊格式月份 ∪ 有本機 PENDING 的月份
+      const oldSet = new Set(oldFormatMonths)
+      const pendingMonths = new Set(pendingTx.map(t => t.date.slice(0, 7)))
+
+      // 🔴 改寫舊格式分頁前必須先成功備份（真實資料保護，guardrail 9b）；
+      //    備份失敗則本輪不改寫舊格式分頁，但仍推送本機 PENDING 所在（新格式或不存在）的月份
+      let allowOldRewrite = true
+      if (oldSet.size > 0) {
+        try {
+          await backupSpreadsheet(sheetId)
+        } catch (err) {
+          console.error('[sync] 備份失敗，本輪不改寫舊格式分頁：', err)
+          allowOldRewrite = false
         }
-        // PENDING 本機修改優先，不覆蓋
       }
 
-      // ── Phase 2: Push（本機 PENDING → Sheets） ───────────
-      const pending = await db.dailyRecords.where('syncStatus').equals('PENDING').toArray()
-      const months  = [...new Set(pending.map(r => r.date.slice(0, 7)))]
+      const monthsToRewrite = new Set<string>(pendingMonths)
+      if (allowOldRewrite) for (const m of oldSet) monthsToRewrite.add(m)
 
-      for (const month of months) {
-        const allForMonth = await db.dailyRecords
-          .filter(r => r.date.startsWith(month))
-          .sortBy('date')
-
-        await syncMonthToSheets(sheetId, month, allForMonth, categories)
-
+      for (const month of monthsToRewrite) {
+        const monthTx = await db.transactions.filter(t => t.date.startsWith(month)).sortBy('date')
+        await syncMonthTransactionsToSheets(sheetId, month, monthTx, categories)
         await Promise.all(
-          allForMonth
-            .filter(r => r.id !== undefined)
-            .map(r => db.dailyRecords.update(r.id!, { syncStatus: 'SYNCED' }))
+          monthTx
+            .filter(t => t.localId !== undefined)
+            .map(t => db.transactions.update(t.localId!, { syncStatus: 'SYNCED' })),
         )
       }
     } catch (err) {
@@ -149,10 +160,10 @@ export function useSyncService() {
       const cloudCategories = await pullConfigFromSheets(sheetId)
       const categories = cloudCategories ?? getCategories()
 
-      const records = await pullAllFromSheets(sheetId, categories)
-      await db.dailyRecords.clear()
-      if (records.length > 0) {
-        await db.dailyRecords.bulkAdd(records)
+      const { seeds } = await pullAllTransactionsFromSheets(sheetId, categories)
+      await db.transactions.clear()
+      if (seeds.length > 0) {
+        await db.transactions.bulkAdd(seeds)
       }
     } catch (err) {
       console.error('[restore] failed:', err)
@@ -164,6 +175,7 @@ export function useSyncService() {
 
   const clearLocalData = useCallback(async () => {
     await db.dailyRecords.clear()
+    await db.transactions.clear()
   }, [])
 
   // 將本地類別設定上傳至 _config tab（類別頁面儲存後呼叫）
