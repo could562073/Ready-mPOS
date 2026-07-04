@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { DashboardPage } from './pages/DashboardPage'
-import { DailyEntryPage } from './pages/DailyEntryPage'
+import { LedgerPage } from './pages/LedgerPage'
 import { MonthlyReportPage } from './pages/MonthlyReportPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { CategoriesPage } from './pages/CategoriesPage'
@@ -92,7 +92,7 @@ function App() {
           <DashboardPage onNavigate={handleNavigate} syncing={syncing} />
         )}
         {tab === 'daily' && (
-          <DailyEntryPage date={dailyDate} onDateChange={setDailyDate} onSync={syncAll} syncing={syncing} />
+          <LedgerPage date={dailyDate} onDateChange={setDailyDate} />
         )}
         {tab === 'monthly' && (
           <MonthlyReportPage onSelectDate={handleSelectDate} />

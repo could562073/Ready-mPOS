@@ -46,10 +46,9 @@ test('底部導覽每個 tab 都能點擊切換且對應頁面渲染', async ({ 
   // 首頁（Dashboard）：預設分頁，驗證今日淨額 Hero 卡已渲染
   await expect(page.getByText('今日淨額', { exact: false })).toBeVisible()
 
-  // 記帳（DailyEntryPage）：收入/支出小計區塊為該頁特有文字
+  // 記帳（LedgerPage）：右下 FAB「新增交易」為該頁固定存在的元素（不受當日有無交易影響）
   await navTab(page, '記帳').click()
-  await expect(page.getByText('收入小計')).toBeVisible()
-  await expect(page.getByText('支出小計')).toBeVisible()
+  await expect(page.getByRole('button', { name: '新增交易' })).toBeVisible()
 
   // 月結（MonthlyReportPage）：本月淨額 Hero 卡為該頁固定標題（不論有無資料都渲染）
   await navTab(page, '月結').click()
