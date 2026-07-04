@@ -38,9 +38,9 @@
 ## 📊 目前狀態
 
 - **整體**：`IN_PROGRESS`
-- **目前 phase**：Phase 4（交易記帳 Sheet + FAB + 單日列表）—— 計畫已寫，開始執行
-- **下一步**：Phase 4 Task 1（`resolveDefaultSub` 純函式 + `TransactionSheet` 元件）→ Task 2（`LedgerPage` + FAB + App 接線 + E2E）→ Task 3（docs）
-- **最後更新**：2026-07-04（Phase 4 計畫寫好，範圍界定見 D5）
+- **目前 phase**：**Phase 5（月曆落地頁 + 月份分頁 Transaction 新格式 + Drive 備份 + `Transaction.id` 對帳）—— 待寫計畫**
+- **下一步**：用 superpowers:writing-plans 依 spec + D4 範圍寫 Phase 5 計畫 → commit → subagent-driven 執行
+- **最後更新**：2026-07-04（Phase 4 收官：全期 review Spec✅/Quality Approved、零 Critical/Important；進 Phase 5）
 
 **環境備註**：Playwright 已可用兩路——(1) `@playwright/test` E2E（`npm run test:e2e`，驗證門檻本體）；(2) Playwright MCP（`mcp__playwright__browser_*`，controller 探索式抽查/除錯 UI 用）。chromium binary 已裝。
 
@@ -51,7 +51,7 @@
 | 1 | 逐筆交易資料層 + Dexie v3 遷移 | `plans/2026-07-01-phase1-transaction-data-foundation.md` | ✅ 完成（commits 8528dcb→aa7c9c4） |
 | 2 | 二級分類 CRUD + CategoryEditSheet UI | `plans/2026-07-02-phase2-subcategories.md` | ✅ 完成（5279bff→0903178）；全期 review With fixes，Important #2 已修，#1 轉 Phase 3 |
 | 3 | 試算表隔離 + `_config` subs 序列化 + 🔴 push/pull 資料流失修正（月份格式移 Phase 5，見 D4） | `plans/2026-07-04-phase3-sheets-config-subs.md` | ✅ 完成（9e23d13→034a66d）；全期 review With fixes，Important #1 守衛競態已修 |
-| 4 | FAB + 交易記帳底部 Sheet + LedgerPage 單日列表（寫 transactions、帶入 defaultSubId） | `plans/2026-07-04-phase4-transaction-entry-sheet.md` | 🔄 執行中 |
+| 4 | FAB + 交易記帳底部 Sheet + LedgerPage 單日列表（寫 transactions、帶入 defaultSubId） | `plans/2026-07-04-phase4-transaction-entry-sheet.md` | ✅ 完成（`fea0f85`→`7810415`）；全期 review Spec✅/Quality Approved、零 Critical/Important；4 Minor 入下方清單 |
 | 5 | 帳目頁（月曆+列表）+ 導覽/落地頁 **+ 月份分頁新格式/舊格式偵測/Drive 備份/Transaction.id 對帳（D4 移入）** | （待 loop 撰寫） | ⬜ 未開始 |
 | 6 | Dashboard / 月結改用 Transaction 重算 | （待 loop 撰寫） | ⬜ 未開始 |
 
@@ -79,3 +79,11 @@
 - **D3（2026-07-03，用戶拍板）**：查證 `useSyncService.ts:22` main 與 feature 用同一 `AUTO_SHEET_NAME='Ready-mPOS 記帳'`，`getOrCreateSpreadsheet` 按名搜尋 → 同帳號登入分支會碰到正式站同一張表；`syncAll` 於 App 開啟/連線/登入/記帳自動觸發。**用戶選「改用獨立測試試算表」**：Phase 3 第一個 task 就把分支 `AUTO_SHEET_NAME` 改成獨立測試名，確保開發期碰不到正式資料；+ 改寫前 Drive 備份；+ cutover 硬停等批准（規則 9）。D2 的「登入 dogfool 資料流失」風險因此一併被隔離解掉（分支不再碰正式表）。
 - **D4（2026-07-04，Phase 3 範圍調整）**：現況 `syncAll` 同步舊 `DailyRecord`，UI 到 Phase 4/5 才改寫 `transactions`。若 Phase 3 就把月份分頁同步切成 Transaction 新格式，會使 UI 新記的 DailyRecord 不再被同步 → 破壞現有 App。故**月份分頁新格式讀寫 / 舊格式偵測改寫 / Drive 備份移到 Phase 5**（與 UI 切換 + Transaction.id 對帳同期，才能端到端測）。**Phase 3 收斂為三件獨立安全的事**：①試算表隔離、②`_config` 二級序列化 + 資料流失 lockstep 修正、③docs。此為對 spec 原分期的調整，已註記於 spec。
 - **D5（2026-07-04，Phase 4 範圍界定）**：Phase 4 = **交易記帳底部 Sheet（TransactionSheet）+ FAB + 新 LedgerPage 單日列表**，寫入/讀取本機 `transactions`，記帳時自動帶入該一級的 `defaultSubId`（順帶處理 Phase 3 Minor #3：消費 defaultSubId 前驗證其仍存在於 subs）。**本期不動 `syncAll` / Dashboard / 月結**（仍讀 `DailyRecord`）。**接受開發期分歧**：雲端 pull 的 dailyRecords 不會顯示在交易列表、交易也還沒同步到 Sheets——這些在 **Phase 5**（月份分頁 Transaction 新格式 + `Transaction.id` 對帳 + 月曆/落地頁）與 **Phase 6**（Dashboard/月結改用 Transaction）收斂。分支未併 main、cutover 硬停，故分歧僅存在於開發分支、安全。理由：交易 Sheet 是可獨立 E2E 測的單元；把 sync/對帳複雜度留給 Phase 5 端到端一次處理，避免半成品互相污染。
+- **D6（2026-07-04，Phase 4 收官）**：全期 review（opus）= Spec compliance ✅、Code quality Approved、零 Critical、零 blocking Important。唯一 Important 為遷移時序缺口（LedgerPage 只讀 `transactions`，v3 upgrade 後才寫入 `dailyRecords` 的資料不顯示）——經確認屬 D5 刻意延到 Phase 5 的 `Transaction.id` 對帳，非 Phase 4 缺陷，原始資料仍安全存於 `dailyRecords`，已列入下方「Phase 5 必做」。4 個 Minor 記於下方清單、不在 Phase 4 修，留最終全分支 review triage。
+
+## 🧹 Minor findings 待最終全分支 review triage
+
+- **[Phase 4] `TransactionSheet.tsx` 小數輸入被截斷**：`value` 由數字 state 反算，打「12.」會被還原成「12」，無法輸入小數。實務衝擊低（台幣多為整數）但 `inputMode="decimal"` 名不符實。修法：draft 存原始字串、blur/save 才轉數字。
+- **[Phase 4] `LedgerPage.tsx` PENDING 同步點用 magic color `'#F59E0B'`**：應改用 token（`T.sun`/`T.sunInk`）。純外觀。
+- **[Phase 4] `LedgerPage.tsx` `toLocalDateString`/`shiftDate` 與 `App.tsx` 重複**：計畫明訂各置一份，可接受；未來抽到 `lib/` 避免漂移。
+- **[Phase 4] `TransactionSheet.tsx` 編輯已停用類別時該類別 chip 不高亮**（被 `c.enabled` 濾掉），preview 退回 `tag`/`coral`；儲存仍正確保留原 `categoryId`。邊角案例。
