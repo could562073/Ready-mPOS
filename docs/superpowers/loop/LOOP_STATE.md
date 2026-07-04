@@ -38,9 +38,9 @@
 ## 📊 目前狀態
 
 - **整體**：`IN_PROGRESS`
-- **目前 phase**：Phase 3（Sheets `_config` 二級同步 + 隔離）—— 計畫已寫，開始執行
-- **下一步**：Phase 3 Task 1（試算表隔離）→ Task 2（`_config` subs 序列化 + 資料流失修正）→ Task 3（docs）
-- **最後更新**：2026-07-04（Phase 3 計畫寫好，範圍調整見 D4）
+- **目前 phase**：Phase 3 ✅ 完成（含全期 review Important #1 隔離守衛競態修正）→ 即將開 Phase 4
+- **下一步**：用 writing-plans 依 spec 寫 Phase 4 計畫（FAB + 新增/編輯交易底部 Sheet，記帳寫入 `transactions`、自動帶入 `defaultSubId`），再 subagent-driven 執行
+- **最後更新**：2026-07-04（Phase 3 完成，commit 034a66d）
 
 **環境備註**：Playwright 已可用兩路——(1) `@playwright/test` E2E（`npm run test:e2e`，驗證門檻本體）；(2) Playwright MCP（`mcp__playwright__browser_*`，controller 探索式抽查/除錯 UI 用）。chromium binary 已裝。
 
@@ -50,8 +50,8 @@
 |-------|------|--------|------|
 | 1 | 逐筆交易資料層 + Dexie v3 遷移 | `plans/2026-07-01-phase1-transaction-data-foundation.md` | ✅ 完成（commits 8528dcb→aa7c9c4） |
 | 2 | 二級分類 CRUD + CategoryEditSheet UI | `plans/2026-07-02-phase2-subcategories.md` | ✅ 完成（5279bff→0903178）；全期 review With fixes，Important #2 已修，#1 轉 Phase 3 |
-| 3 | 試算表隔離 + `_config` subs 序列化 + 🔴 push/pull 資料流失修正（月份格式移 Phase 5，見 D4） | `plans/2026-07-04-phase3-sheets-config-subs.md` | 🔄 執行中 |
-| 4 | FAB + 新增/編輯交易底部 Sheet | （待 loop 撰寫） | ⬜ 未開始 |
+| 3 | 試算表隔離 + `_config` subs 序列化 + 🔴 push/pull 資料流失修正（月份格式移 Phase 5，見 D4） | `plans/2026-07-04-phase3-sheets-config-subs.md` | ✅ 完成（9e23d13→034a66d）；全期 review With fixes，Important #1 守衛競態已修 |
+| 4 | FAB + 新增/編輯交易底部 Sheet（寫 transactions、帶入 defaultSubId） | （待 loop 撰寫） | ⬜ 下一個 |
 | 5 | 帳目頁（月曆+列表）+ 導覽/落地頁 **+ 月份分頁新格式/舊格式偵測/Drive 備份/Transaction.id 對帳（D4 移入）** | （待 loop 撰寫） | ⬜ 未開始 |
 | 6 | Dashboard / 月結改用 Transaction 重算 | （待 loop 撰寫） | ⬜ 未開始 |
 
