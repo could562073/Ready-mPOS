@@ -31,11 +31,11 @@ Ready-mPOS/
 │   ├── public/
 │   │   └── sw.js              # Service Worker（打烊提醒推播通知）
 │   └── src/
-│       ├── pages/             # DashboardPage, DailyEntryPage, MonthlyReportPage
+│       ├── pages/             # DashboardPage, LedgerPage, DailyEntryPage(舊), MonthlyReportPage
 │       │                      # SettingsPage, CategoriesPage, OnboardingPage
 │       ├── hooks/             # useDailyRecord, useMonthlyRecords, useTransactions, useSyncService
-│       ├── lib/               # sheets, categories, notification, tokens, fmt, ids, migrate, transactions
-│       ├── components/        # Icon, CategoryEditSheet
+│       ├── lib/               # sheets, categories, notification, tokens, fmt, ids, migrate, txDraft, transactions
+│       ├── components/        # Icon, TransactionSheet, CategoryEditSheet
 │       ├── db/                # Dexie.js schema（v3：transactions 逐筆交易 + 自動遷移）
 │       └── types/             # Transaction, DailyRecord, Category（含二級 subs）, SyncStatus
 └── docs/                      # ADR 架構決策紀錄 + superpowers specs/plans
@@ -228,4 +228,10 @@ Ready-mPOS/
 - 🔒 開發安全：feature 分支同步隔離到獨立測試試算表，開發期不碰正式站資料（併 main 前改回正式名）
 - ⚠️ 月份分頁新格式讀寫／舊格式偵測改寫／Drive 備份移至 Phase 5（與 UI 切換同期，才能端到端驗證）
 
-**Phase 4–6（規劃中）**：FAB 記帳底部 Sheet（自動帶入預設二級）／月曆＋逐筆列表新主畫面＋月份分頁 Transaction 新格式／Dashboard・月結改用 Transaction 重算。
+**Phase 4 — 逐筆交易記帳 UI（✅ 完成）**
+- 「記帳」tab 改用 `LedgerPage`：單日逐筆交易列表 + 右下浮動「＋」FAB
+- `TransactionSheet` 底部 Sheet：收支切換 / 一級類別 / 二級（自動帶入預設，`resolveDefaultSub` 防 dangling）/ 金額 / 備註 / 日期 / 「儲存並繼續」連續記帳 / 編輯可刪
+- 寫入本機 `transactions`；Playwright E2E 覆蓋新增/預設二級/儲存並繼續/編輯/刪除/重整持久
+- ⚠️ Dashboard・月結・雲端同步仍為 `DailyRecord`，待 Phase 5/6 收斂（開發分支暫時分歧，見設計 spec）
+
+**Phase 5–6（規劃中）**：月曆＋逐筆列表落地頁＋月份分頁 Transaction 新格式＋舊格式偵測改寫＋`Transaction.id` 對帳／Dashboard・月結改用 Transaction 重算。

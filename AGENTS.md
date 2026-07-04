@@ -56,7 +56,7 @@ Before starting any task:
 - **Push Notifications**: ✅ Complete — Service Worker + Web Push，自訂提醒時間
 - **Deployment**: ✅ GitHub Pages (自動 CI/CD on push to main)
 - **Backend**: ❌ Removed — 無後端伺服器，純前端架構
-- **第 2 次優化（進行中）**: 逐筆交易改造 — **Phase 1 資料層 + Phase 2 二級分類 + Phase 3 `_config` 同步完成**。Phase 1：`Transaction` 型別、Dexie v3 自動遷移、`explodeDailyRecord` 拆解純函式 + Vitest、交易 CRUD/hook。Phase 2：二級分類純函式 CRUD（`addSub/renameSub/deleteSub/setDefaultSub`）+ `CategoryEditSheet` 內管理 UI + Playwright E2E。Phase 3：二級經 Sheets `_config` 的 `subs`/`defaultSub` 兩欄跨裝置同步（`serializeSubs`/`parseSubs`）、修正 Phase 2 揪出的 push/pull 資料流失、feature 分支同步隔離到獨立測試試算表（`AUTO_SHEET_NAME`，🔴 併 main 前須改回正式名）。UI 主畫面仍讀舊 `DailyRecord` 彙總模型，Phase 4–6（FAB 記帳 Sheet / 月曆列表主畫面＋月份分頁新格式 / Dashboard 月結重算）尚未接上。分支 `feature/line-item-transactions-redesign`。設計 spec：`docs/superpowers/specs/2026-07-01-line-item-transactions-redesign-design.md`。
+- **第 2 次優化（進行中）**: 逐筆交易改造 — **Phase 1–4 完成**。Phase 1：`Transaction` 型別、Dexie v3 自動遷移、`explodeDailyRecord` 拆解純函式 + Vitest、交易 CRUD/hook。Phase 2：二級分類純函式 CRUD + `CategoryEditSheet` 管理 UI + E2E。Phase 3：二級經 Sheets `_config` 跨裝置同步（`serializeSubs`/`parseSubs`）+ 修 push/pull 資料流失 + feature 分支同步隔離到獨立測試試算表（🔴 併 main 前須改回正式名）。Phase 4：記帳改逐筆交易 — 「記帳」tab 換成 `LedgerPage`（單日列表 + 右下 FAB → `TransactionSheet` 記帳，選一級自動帶入 `defaultSubId`），寫入 `transactions` + Playwright E2E。⚠️ **Dashboard / 月結 / 雲端同步仍讀舊 `DailyRecord`**，待 Phase 5（月曆落地頁＋月份分頁 Transaction 新格式＋`Transaction.id` 對帳）與 Phase 6（Dashboard・月結重算）——期間開發分支有暫時分歧（見 loop 決策 D5），未併 main、cutover 硬停故安全。分支 `feature/line-item-transactions-redesign`。設計 spec：`docs/superpowers/specs/2026-07-01-line-item-transactions-redesign-design.md`。
 
 ---
 
@@ -69,9 +69,10 @@ Ready-mPOS/
 │   │   └── sw.js              # Service Worker（打烊提醒推播通知）
 │   └── src/
 │       ├── pages/
-│       │   ├── DashboardPage.tsx      # 首頁：今日淨額、收支分解、7天趨勢
-│       │   ├── DailyEntryPage.tsx     # 每日記帳（動態類別、確認 modal）
-│       │   ├── MonthlyReportPage.tsx  # 月結報表
+│       │   ├── DashboardPage.tsx      # 首頁：今日淨額、收支分解、7天趨勢（仍讀 DailyRecord，待 Phase 6）
+│       │   ├── LedgerPage.tsx         # 「記帳」tab：單日逐筆交易列表 + FAB 記帳（Phase 4，讀 transactions）
+│       │   ├── DailyEntryPage.tsx     # 舊每日彙總記帳頁（Phase 4 起已由 LedgerPage 取代，檔案暫留）
+│       │   ├── MonthlyReportPage.tsx  # 月結報表（仍讀 DailyRecord，待 Phase 6）
 │       │   ├── SettingsPage.tsx       # 設定：類別、Google Sheets、通知
 │       │   ├── CategoriesPage.tsx     # 類別管理（收入/支出）
 │       │   └── OnboardingPage.tsx     # 初次設定引導
@@ -82,6 +83,7 @@ Ready-mPOS/
 │       │   └── useSyncService.ts      # Google Sheets 同步服務
 │       ├── components/
 │       │   ├── Icon.tsx               # Lucide-style SVG icon
+│       │   ├── TransactionSheet.tsx   # 交易記帳底部 Sheet（收支/類別/二級/金額/儲存並繼續，Phase 4）
 │       │   └── CategoryEditSheet.tsx  # 類別新增/編輯底部 Sheet（共用）
 │       ├── lib/
 │       │   ├── sheets.ts              # Google Sheets API + GIS OAuth2
@@ -91,6 +93,7 @@ Ready-mPOS/
 │       │   ├── fmt.ts                 # NT$ 金額格式化
 │       │   ├── ids.ts                 # newId() 穩定 ID 產生器
 │       │   ├── migrate.ts             # explodeDailyRecord：舊 DailyRecord→Transaction[] 拆解（純函式）
+│       │   ├── txDraft.ts             # resolveDefaultSub：記帳帶入預設二級（純函式，防 dangling）
 │       │   └── transactions.ts        # 逐筆交易 CRUD（add / update / delete）
 │       ├── db/
 │       │   └── index.ts               # Dexie.js schema（v3：transactions 逐筆交易 store + 自動遷移）
@@ -131,7 +134,8 @@ Ready-mPOS/
 - `explodeDailyRecord`（`lib/migrate.ts`）為**純函式**（不 import Dexie，Vitest 覆蓋）：零金額略過、項目備註帶入、日備註以全形「｜」併入當天第一筆交易；當天無交易則捨棄日備註。
 - `lib/transactions.ts`：`addTransaction / updateTransaction / deleteTransaction`，寫入時設 `syncStatus='PENDING'` 並更新 `updatedAt`。
 - `hooks/useTransactions.ts`：`useMonthTransactions('YYYY-MM')` 以 `date` 前綴查詢（用 `startsWith('YYYY-MM-')` 避免跨月誤配）、`useDayTransactions('YYYY-MM-DD')` 查單日；沿用 `useDailyRecord` 的 `undefined=載入中` 慣例。
-- ⚠️ **UI 主畫面仍讀舊 `DailyRecord` 模型**（帳目頁 / FAB 記帳 Sheet / Dashboard / 月結），待 Phase 4–6 切換到 `transactions`（Phase 1–3 已完成資料層 / 二級 / `_config` 同步）。
+- **記帳 UI（Phase 4）**：「記帳」tab = `LedgerPage`（`useDayTransactions` 單日列表 + 右下 FAB）；`TransactionSheet` 底部 Sheet 收支切換 / 一級類別 chips / 二級 chips（含「無」）/ 金額（正數）/ 備註 / 日期 / 「儲存並繼續」連續記帳 / 編輯可刪。選一級類別時二級自動帶入 `resolveDefaultSub(cat)`（`lib/txDraft.ts` 純函式，Vitest 覆蓋；`defaultSubId` 若已不在 `subs` 內視為「無」）。寫入透過 `lib/transactions.ts`。
+- ⚠️ **Dashboard / 月結 / 雲端同步仍讀舊 `DailyRecord` 模型**，待 Phase 5（月曆落地頁＋月份分頁 Transaction 新格式＋`Transaction.id` 對帳）與 Phase 6（Dashboard・月結重算）。開發分支期間有暫時分歧（新交易未同步、Dashboard 未反映），見 loop 決策 D5；未併 main、cutover 硬停故安全。
 
 ### 類別系統（`lib/categories.ts`）
 - 類別儲存在 `localStorage`（key: `mpos_categories`）
