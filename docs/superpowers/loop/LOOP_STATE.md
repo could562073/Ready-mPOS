@@ -72,6 +72,7 @@
 ## 🚧 Blockers / 待用戶決策
 
 - ✅ **已解除**：分支雲端同步已由 Phase 3 Task 1 隔離到獨立測試試算表「Ready-mPOS 記帳（逐筆交易測試）」，開發期不再碰正式站資料。
+- 🔴 **[cutover 前必決，見 D8 Important]** cutover 首次同步的交易重複問題：`explodeDailyRecord` 隨機 id 使本機遷移份與雲端 re-explode 份無法以 id 對帳去重 → 帳目翻倍。**cutover 硬停時請用戶擇一**：(a) cutover 首次同步走 `restoreFromSheets`（clear→bulkAdd，單份、天然無重複）；(b) 替 explode 導入 deterministic id（如 `date|type|categoryId|序號` 雜湊），讓兩端產生相同 id。dev 分支不受影響（測試表為新格式），故不阻擋 Phase 5–7。
 
 ## 📝 決策日誌（loop 自行做的判斷，供用戶事後 review）
 
@@ -83,6 +84,10 @@
 - **D6（2026-07-04，Phase 4 收官）**：全期 review（opus）= Spec compliance ✅、Code quality Approved、零 Critical、零 blocking Important。唯一 Important 為遷移時序缺口（LedgerPage 只讀 `transactions`，v3 upgrade 後才寫入 `dailyRecords` 的資料不顯示）——經確認屬 D5 刻意延到 Phase 5 的 `Transaction.id` 對帳，非 Phase 4 缺陷，原始資料仍安全存於 `dailyRecords`，已列入下方「Phase 5 必做」。4 個 Minor 記於下方清單、不在 Phase 4 修，留最終全分支 review triage。
 
 - **D7（2026-07-04，Phase 5 拆分）**：D4 原把「月曆落地頁 + 月份分頁 Transaction 新格式 + Drive 備份 + `Transaction.id` 對帳」全塞進 Phase 5。依 writing-plans Scope Check，這是兩個獨立子系統（同步/資料層 vs. 月曆 UI），風險與測試方式差很大（sync 是純函式 + OAuth 手動驗證；UI 是 Playwright E2E）。故拆為：**Phase 5 = sync 資料層**（本計畫，最高風險、碰真實資料保護紅線）、**Phase 6 = 月曆落地頁 + 導覽**、**Phase 7 = Dashboard/月結重算**。各自可獨立測試/出貨。已同步進度總表。
+
+- **D8（2026-07-04，Phase 5 Task 4 review）**：opus 全審揪出兩個問題，均源自計畫 Step 2 的邏輯漏洞（controller 自己在計畫中寫錯）：
+  - **🔴 Critical（已修）**：備份失敗時「舊格式∩有本機 PENDING」的月份仍被 clear+覆蓋，違反「無成功備份不改寫任何舊格式分頁」（guardrail 9b）。因 v3 遷移把所有歷史交易標 PENDING，cutover 時 `pendingMonths` ⊇ 全部舊格式月份，屬紅線主場景。**已 fix**：`monthsToRewrite` 改為「凡屬 `oldSet` 的月份僅在 `allowOldRewrite` 時納入，即使有 PENDING」。計畫 Step 2 程式碼亦同步修正（事實來源一致）。此修正解決的是計畫內部與 guardrail 9b 的矛盾——安全約束優先，故 controller 直接修不另問用戶。
+  - **🟠 Important（延到 cutover，需用戶決策）**：`explodeDailyRecord` 用隨機 `newId()`，本機遷移 explode（PENDING）與雲端對同批舊格式 re-explode（SYNCED seeds）產生**不同 id** → `mergeTransactionsById` 視為互不相交全部 `toAdd` → 同一筆帳本機出現兩份、push 後雲端亦翻倍。**僅在 cutover 對正式站舊格式資料首次同步時爆發**；dev 用測試試算表（新格式）不受影響，故不阻擋 Phase 5。**已列入下方 Blockers + cutover 檢查清單**：cutover 前須擇一解法（改走 `restoreFromSheets` 的 clear→bulkAdd 單份路徑／或替 explode 導入 deterministic id），由用戶於 cutover 硬停時裁決。
 
 ## 🧹 Minor findings 待最終全分支 review triage
 
