@@ -1,5 +1,5 @@
 import type { DailyRecord, Category } from '../types'
-import { applyCloudCategories, isCategoriesDirty, clearCategoriesDirty } from './categories'
+import { applyCloudCategories, isCategoriesDirty, clearCategoriesDirty, serializeSubs, parseSubs } from './categories'
 
 const CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) || ''
 
@@ -28,7 +28,7 @@ const FIXED_COLS = new Set([COL_DATE, COL_NOTES, COL_ITEM_NOTES, COL_TOTAL_INCOM
 
 // _config tab 欄位順序
 const CONFIG_TAB     = '_config'
-const CONFIG_HEADERS = ['id', 'name', 'icon', 'color', 'fee', 'enabled', 'type']
+const CONFIG_HEADERS = ['id', 'name', 'icon', 'color', 'fee', 'enabled', 'type', 'subs', 'defaultSub']
 
 interface TokenInfo {
   access_token: string
@@ -274,6 +274,8 @@ export async function pushConfigToSheets(spreadsheetId: string, categories: Cate
       c.fee ?? 0,
       c.enabled ? 'true' : 'false',
       c.type,
+      serializeSubs(c.subs ?? []),
+      c.defaultSubId ?? '',
     ]),
   ]
 
@@ -297,7 +299,7 @@ export async function pullConfigFromSheets(spreadsheetId: string): Promise<Categ
   const token = await acquireToken()
   try {
     const data = await sheetsGet<{ values?: string[][] }>(
-      `/${spreadsheetId}/values/${encodeURIComponent(CONFIG_TAB + '!A1:G')}`,
+      `/${spreadsheetId}/values/${encodeURIComponent(CONFIG_TAB + '!A1:I')}`,
       token,
     )
     const rows = data.values ?? []
@@ -309,15 +311,21 @@ export async function pullConfigFromSheets(spreadsheetId: string): Promise<Categ
 
     const categories: Category[] = rows.slice(1)
       .filter(r => r[idx('id')])
-      .map(r => ({
-        id:      r[idx('id')],
-        name:    r[idx('name')]  ?? '',
-        icon:    r[idx('icon')]  ?? 'tag',
-        color:   r[idx('color')] ?? 'mint',
-        fee:     parseFloat(r[idx('fee')]) || 0,
-        enabled: r[idx('enabled')] !== 'false',
-        type:    (r[idx('type')] === 'expense' ? 'expense' : 'income') as 'income' | 'expense',
-      }))
+      .map(r => {
+        const subsRaw = idx('subs') >= 0 ? (r[idx('subs')] ?? '') : ''
+        const defRaw  = idx('defaultSub') >= 0 ? (r[idx('defaultSub')] ?? '') : ''
+        return {
+          id:      r[idx('id')],
+          name:    r[idx('name')]  ?? '',
+          icon:    r[idx('icon')]  ?? 'tag',
+          color:   r[idx('color')] ?? 'mint',
+          fee:     parseFloat(r[idx('fee')]) || 0,
+          enabled: r[idx('enabled')] !== 'false',
+          type:    (r[idx('type')] === 'expense' ? 'expense' : 'income') as 'income' | 'expense',
+          subs:        parseSubs(subsRaw),
+          defaultSubId: defRaw || null,
+        }
+      })
 
     if (categories.length > 0) {
       // 套用前再次檢查：拉取期間使用者可能剛好做了編輯

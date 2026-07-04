@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { addSub, renameSub, deleteSub, setDefaultSub } from './categories'
+import { addSub, renameSub, deleteSub, setDefaultSub, serializeSubs, parseSubs } from './categories'
 import type { Category } from '../types'
 
 const base: Category = { id: 'misc', name: '雜項', icon: 'tag', color: 'coral', enabled: true, type: 'expense' }
@@ -38,5 +38,26 @@ describe('二級分類 CRUD（純函式）', () => {
     const c: Category = { ...base, subs: [{ id: 's1', name: '瓦斯' }] }
     expect(setDefaultSub(c, 's1').defaultSubId).toBe('s1')
     expect(setDefaultSub(c, null).defaultSubId).toBeNull()
+  })
+})
+
+describe('二級序列化 round-trip（_config 儲存）', () => {
+  it('serializeSubs 以 id:encodeURIComponent(name)、| 分隔', () => {
+    expect(serializeSubs([{ id: 's1', name: '瓦斯費' }, { id: 's2', name: '水費' }]))
+      .toBe(`s1:${encodeURIComponent('瓦斯費')}|s2:${encodeURIComponent('水費')}`)
+  })
+  it('空清單序列化為空字串', () => {
+    expect(serializeSubs([])).toBe('')
+  })
+  it('parseSubs 還原 id 與 name', () => {
+    const raw = `s1:${encodeURIComponent('瓦斯費')}|s2:${encodeURIComponent('水費')}`
+    expect(parseSubs(raw)).toEqual([{ id: 's1', name: '瓦斯費' }, { id: 's2', name: '水費' }])
+  })
+  it('空字串 parse 為空陣列', () => {
+    expect(parseSubs('')).toEqual([])
+  })
+  it('round-trip 保住含分隔字元的名稱', () => {
+    const subs = [{ id: 's1', name: '瓦斯:費|特殊' }]
+    expect(parseSubs(serializeSubs(subs))).toEqual(subs)
   })
 })

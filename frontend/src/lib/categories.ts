@@ -109,3 +109,22 @@ export function deleteSub(cat: Category, subId: string): Category {
 export function setDefaultSub(cat: Category, subId: string | null): Category {
   return { ...cat, defaultSubId: subId }
 }
+
+// 序列化二級清單為 _config 儲存字串：id:encodeURIComponent(name)，多筆以 | 分隔。
+// name 經 encodeURIComponent，容許名稱含 : 或 | 而不破壞格式。
+export function serializeSubs(subs: Sub[]): string {
+  return subs.map(s => `${s.id}:${encodeURIComponent(s.name)}`).join('|')
+}
+
+// 反序列化 _config 的 subs 欄；容錯：空字串→[]，格式不符的片段略過。
+export function parseSubs(raw: string): Sub[] {
+  if (!raw) return []
+  return raw
+    .split('|')
+    .map(part => {
+      const sep = part.indexOf(':')
+      if (sep < 1) return null
+      return { id: part.slice(0, sep), name: decodeURIComponent(part.slice(sep + 1)) }
+    })
+    .filter((s): s is Sub => s !== null)
+}
