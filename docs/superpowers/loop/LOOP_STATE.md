@@ -38,9 +38,9 @@
 ## 📊 目前狀態
 
 - **整體**：`IN_PROGRESS`
-- **目前 phase**：**Phase 6（帳目頁月曆 + 導覽/落地頁）—— 待寫計畫**
-- **下一步**：用 superpowers:writing-plans 依 spec 寫 Phase 6 計畫（月曆格顯示當日淨額、點日篩選、落地頁＝帳目、導覽調整；讀 `useMonthTransactions`；Playwright E2E）→ commit → subagent-driven 執行
-- **最後更新**：2026-07-05（**Phase 5 完整收官**：T1–T6 + 全期 review Approved + Important 已由 T6 修；進 Phase 6）
+- **目前 phase**：**Phase 6（帳目頁月曆 + 導覽/落地頁）—— 計畫已寫，開始執行**
+- **下一步**：subagent-driven 跑 Phase 6 Task 1（`lib/calendar.ts` 月曆純函式）→ Task 2（`MonthCalendar` + 掛 LedgerPage）→ Task 3（App 落地頁/導覽改帳目 + Playwright E2E）→ Task 4（docs）
+- **最後更新**：2026-07-05（Phase 6 計畫完成，開始 Task 1）
 
 **Phase 5 commits**：`78e7797`(T1) `685fc69`(T2) `98e9bed`(T3) `7740aa0`+`c8591d0`fix(T4) `cd283c9`(T5) `e94ef4b`(T6 決定性 id) `2858383`(docs)｜tsc/vitest(36)/build 皆綠。
 
@@ -62,7 +62,7 @@
 | 3 | 試算表隔離 + `_config` subs 序列化 + 🔴 push/pull 資料流失修正（月份格式移 Phase 5，見 D4） | `plans/2026-07-04-phase3-sheets-config-subs.md` | ✅ 完成（9e23d13→034a66d）；全期 review With fixes，Important #1 守衛競態已修 |
 | 4 | FAB + 交易記帳底部 Sheet + LedgerPage 單日列表（寫 transactions、帶入 defaultSubId） | `plans/2026-07-04-phase4-transaction-entry-sheet.md` | ✅ 完成（`fea0f85`→`7810415`）；全期 review Spec✅/Quality Approved、零 Critical/Important；4 Minor 入下方清單 |
 | 5 | **月份分頁逐筆交易新格式 + 舊格式偵測改寫 + Drive 備份 + `Transaction.id` 對帳 + syncAll 切換 + 決定性 id**（D7 拆出的 sync 資料層） | `plans/2026-07-04-phase5-sheets-transaction-sync.md` | ✅ 完成（`78e7797`→`2858383`，T1–T6）；全期 review Spec✅/Approved/零 Critical；Important（explode-id 累積重複）已由 T6 決定性 id 修 |
-| 6 | 帳目頁月曆（月淨額格）+ 導覽/落地頁調整（落地頁＝帳目） | （待 loop 撰寫） | ⬜ 未開始 |
+| 6 | 帳目頁月曆（月淨額格）+ 導覽/落地頁調整（落地頁＝帳目） | `plans/2026-07-05-phase6-calendar-ledger-landing.md` | 🔄 執行中（計畫已寫，開始 Task 1） |
 | 7 | Dashboard / 月結改用 Transaction 重算 | （待 loop 撰寫） | ⬜ 未開始 |
 
 ### Task 0（bootstrap，Phase 2 前做一次）：Playwright E2E 基礎
