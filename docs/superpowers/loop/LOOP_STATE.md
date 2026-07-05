@@ -38,9 +38,12 @@
 ## 📊 目前狀態
 
 - **整體**：`IN_PROGRESS`
-- **目前 phase**：**Phase 6（帳目頁月曆 + 導覽/落地頁）—— 計畫已寫，開始執行**
-- **下一步**：subagent-driven 跑 Phase 6 Task 1（`lib/calendar.ts` 月曆純函式）→ Task 2（`MonthCalendar` + 掛 LedgerPage）→ Task 3（App 落地頁/導覽改帳目 + Playwright E2E）→ Task 4（docs）
-- **最後更新**：2026-07-05（Phase 6 計畫完成，開始 Task 1）
+- **目前 phase**：**Phase 6（帳目頁月曆 + 導覽/落地頁）—— Task 1–3 完成，Task 4（docs）待做**
+- **下一步**：完成 Phase 6 Task 4（更新 CLAUDE/AGENTS/README 描述月曆落地頁；controller 手動做，因 rate limit 中斷了 docs subagent）→ Phase 6 全期 review（opus）→ 收官 → Phase 7（Dashboard/月結改用 Transaction 重算）
+- **⚠️ Rate limit**：2026-07-05 session limit（Asia/Taipei 21:40 重置）中斷 Task 4 docs subagent；工作樹乾淨（HEAD=`2dc979e`=Task 3），無殘留。重置後或有額度時由 controller 續做 Task 4 + 全期 review。
+- **最後更新**：2026-07-05（Phase 6 Task 1–3 完成並 review 過；Task 4 docs 待補）
+
+**Phase 6 commits**：`817d42b`(T1 月曆純函式) `6580684`(T2 MonthCalendar+掛帳目頁) `2dc979e`(T3 落地頁/導覽改帳目+E2E 5 passed)｜各 task review 皆 Spec✅/Approved｜tsc/vitest(41)/build/playwright(5) 綠。
 
 **Phase 5 commits**：`78e7797`(T1) `685fc69`(T2) `98e9bed`(T3) `7740aa0`+`c8591d0`fix(T4) `cd283c9`(T5) `e94ef4b`(T6 決定性 id) `2858383`(docs)｜tsc/vitest(36)/build 皆綠。
 
@@ -62,7 +65,7 @@
 | 3 | 試算表隔離 + `_config` subs 序列化 + 🔴 push/pull 資料流失修正（月份格式移 Phase 5，見 D4） | `plans/2026-07-04-phase3-sheets-config-subs.md` | ✅ 完成（9e23d13→034a66d）；全期 review With fixes，Important #1 守衛競態已修 |
 | 4 | FAB + 交易記帳底部 Sheet + LedgerPage 單日列表（寫 transactions、帶入 defaultSubId） | `plans/2026-07-04-phase4-transaction-entry-sheet.md` | ✅ 完成（`fea0f85`→`7810415`）；全期 review Spec✅/Quality Approved、零 Critical/Important；4 Minor 入下方清單 |
 | 5 | **月份分頁逐筆交易新格式 + 舊格式偵測改寫 + Drive 備份 + `Transaction.id` 對帳 + syncAll 切換 + 決定性 id**（D7 拆出的 sync 資料層） | `plans/2026-07-04-phase5-sheets-transaction-sync.md` | ✅ 完成（`78e7797`→`2858383`，T1–T6）；全期 review Spec✅/Approved/零 Critical；Important（explode-id 累積重複）已由 T6 決定性 id 修 |
-| 6 | 帳目頁月曆（月淨額格）+ 導覽/落地頁調整（落地頁＝帳目） | `plans/2026-07-05-phase6-calendar-ledger-landing.md` | 🔄 執行中（計畫已寫，開始 Task 1） |
+| 6 | 帳目頁月曆（月淨額格）+ 導覽/落地頁調整（落地頁＝帳目） | `plans/2026-07-05-phase6-calendar-ledger-landing.md` | 🔄 Task 1–3 完成（`817d42b`→`2dc979e`）、review 過；Task 4 docs 待補 + 全期 review 待做（rate limit 中斷） |
 | 7 | Dashboard / 月結改用 Transaction 重算 | （待 loop 撰寫） | ⬜ 未開始 |
 
 ### Task 0（bootstrap，Phase 2 前做一次）：Playwright E2E 基礎
