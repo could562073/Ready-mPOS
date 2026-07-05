@@ -38,9 +38,10 @@
 ## 📊 目前狀態
 
 - **整體**：`IN_PROGRESS`
-- **目前 phase**：**Phase 7（Dashboard / 月結改用 Transaction 重算）—— 待寫計畫**（第 2 次優化最後一期）
-- **下一步**：用 superpowers:writing-plans 依 spec 寫 Phase 7 計畫（`calcFees` 吃 `Transaction[]`、Dashboard/月結從 `useMonth/DayTransactions` 重算含手續費後淨額、移除對 `DailyRecord` 的讀取依賴；月曆淨額是否改為扣手續費一併評估；E2E）→ commit → subagent-driven 執行
-- **最後更新**：2026-07-05（**Phase 6 完整收官**：T1–T4 + 全期 review Approved/零 Critical；進 Phase 7。rate limit 中斷的 Task 4 docs 已由 controller 手動補完）
+- **目前 phase**：**Phase 7（Dashboard / 月結改用 Transaction 重算）—— 計畫已寫，開始執行**（第 2 次優化最後一期）
+- **下一步**：subagent-driven 跑 Phase 7 Task 1（`lib/aggregate.ts` `buildDailyRecordsFromTx` 純函式）→ Task 2（Dashboard 換資料源）→ Task 3（月結換資料源）→ Task 4（E2E + 文檔收官）
+- **設計要點**：adapter `buildDailyRecordsFromTx(txs)→合成 DailyRecord[]`，兩頁只換資料源、既有 `dayIncome/dayExpense/calcFees/TrendChart/CategoryBars` 零改動重用（最低風險）。月曆淨額維持毛額（不扣費）、Hero 維持扣費後，差異刻意保留（見計畫範圍取捨）。
+- **最後更新**：2026-07-06（Phase 7 計畫完成，開始 Task 1）
 
 **Phase 6 commits**：`817d42b`(T1) `6580684`(T2) `2dc979e`(T3 E2E 5 passed) `f579dba`(T4 docs)｜各 task + 全期 review 皆 Spec✅/Approved｜tsc/vitest(41)/build/playwright(5) 綠。
 
@@ -65,7 +66,7 @@
 | 4 | FAB + 交易記帳底部 Sheet + LedgerPage 單日列表（寫 transactions、帶入 defaultSubId） | `plans/2026-07-04-phase4-transaction-entry-sheet.md` | ✅ 完成（`fea0f85`→`7810415`）；全期 review Spec✅/Quality Approved、零 Critical/Important；4 Minor 入下方清單 |
 | 5 | **月份分頁逐筆交易新格式 + 舊格式偵測改寫 + Drive 備份 + `Transaction.id` 對帳 + syncAll 切換 + 決定性 id**（D7 拆出的 sync 資料層） | `plans/2026-07-04-phase5-sheets-transaction-sync.md` | ✅ 完成（`78e7797`→`2858383`，T1–T6）；全期 review Spec✅/Approved/零 Critical；Important（explode-id 累積重複）已由 T6 決定性 id 修 |
 | 6 | 帳目頁月曆（月淨額格）+ 導覽/落地頁調整（落地頁＝帳目） | `plans/2026-07-05-phase6-calendar-ledger-landing.md` | ✅ 完成（`817d42b`→`f579dba`，T1–T4）；全期 review Spec✅/Approved/零 Critical；E2E 5 passed |
-| 7 | Dashboard / 月結改用 Transaction 重算（第 2 次優化最後一期） | （待 loop 撰寫） | ⬜ 未開始 |
+| 7 | Dashboard / 月結改用 Transaction 重算（第 2 次優化最後一期） | `plans/2026-07-05-phase7-dashboard-monthly-recompute.md` | 🔄 執行中（計畫已寫，開始 Task 1） |
 
 ### Task 0（bootstrap，Phase 2 前做一次）：Playwright E2E 基礎
 
