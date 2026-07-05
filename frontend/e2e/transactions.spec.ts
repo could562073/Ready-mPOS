@@ -5,6 +5,8 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
 // 以及帳目落地頁 + 月曆點日切換的行為。
 // 種子沿用 subcategories.spec 的預設類別陣列，額外讓「雜支」帶二級「瓦斯費」且設為預設，
 // 以驗證選定一級類別時 resolveDefaultSub 自動帶入的行為。
+// 另含 Phase 7 案例：在「帳目」FAB 新增交易後，切到「首頁」/「月結」斷言兩者皆經
+// buildDailyRecordsFromTx 重算並反映該筆（驗證 Dashboard/月結不再讀舊 DailyRecord 彙總表）。
 
 // 監聽頁面未捕捉例外（pageerror），收集起來供各測試斷言為空
 function collectPageErrors(page: Page): Error[] {
@@ -148,6 +150,36 @@ test('帳目為落地頁、月曆顯示當日淨額並可點日切換', async ({
   await page.getByRole('button', { name: '前一天' }).click()
   await expect(page.getByText('本日尚無記帳，點右下＋新增')).toBeVisible()
   await expect(txRow(page, '現金', '800')).toHaveCount(0)
+
+  expect(errors).toEqual([])
+})
+
+test('Phase 7：帳目新增交易後，首頁與月結皆反映該筆（transactions 重算）', async ({ page }) => {
+  const errors = collectPageErrors(page)
+
+  await page.goto('/')
+
+  // 落地頁即「帳目」→ 用 FAB 新增一筆今日收入「現金 1234」（金額用好辨識的數字）
+  await page.getByRole('button', { name: '新增交易' }).click()
+  await expect(page.getByText('新增交易').last()).toBeVisible()
+  await page.getByRole('button', { name: '收入', exact: true }).click()
+  await page.getByRole('button', { name: '類別 現金' }).click()
+  await page.getByLabel('金額', { exact: true }).fill('1234')
+  await page.getByRole('button', { name: '儲存', exact: true }).click()
+  await expect(page.getByText('新增交易').last()).toBeHidden()
+  await expect(txRow(page, '現金', '1,234')).toBeVisible()
+
+  // 切到「首頁」→ 今日淨額 Hero（buildDailyRecordsFromTx 重算）反映該筆金額
+  await navTab(page, '首頁').click()
+  await expect(page.getByText('+$1,234').first()).toBeVisible()
+
+  // 切到「月結」→ 本月「總收入」（同樣經 buildDailyRecordsFromTx 重算）含這筆 1234
+  await navTab(page, '月結').click()
+  const totalIncomeStat = page.locator('div')
+    .filter({ hasText: '總收入' })
+    .filter({ hasNotText: '總支出' })
+    .first()
+  await expect(totalIncomeStat).toContainText('$1,234')
 
   expect(errors).toEqual([])
 })

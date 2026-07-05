@@ -59,7 +59,7 @@ Ready-mPOS/
 | Google 登入持久化（localStorage token，50 分鐘自動刷新） | ✅ |
 | 打烊提醒推播通知（自訂時間，Service Worker） | ✅ |
 | GitHub Pages 自動部署 | ✅ |
-| 逐筆交易模型 + 月曆列表主畫面 + 二級分類（第 2 次優化） | 🚧 進行中（Phase 1–6 完成：資料層／二級分類／記帳 UI／雲端同步／月曆落地頁；Dashboard・月結重算 Phase 7 待做） |
+| 逐筆交易模型 + 月曆列表主畫面 + 二級分類（第 2 次優化） | ✅ 完成（Phase 1–7）：資料層／二級分類／記帳 UI／雲端同步／月曆落地頁／Dashboard・月結改用交易重算 |
 
 ## Google Sheets 同步
 
@@ -201,12 +201,12 @@ Ready-mPOS/
 
 ---
 
-### 第 2 次優化 — 2026-07-01 起　逐筆交易改造（進行中）
+### 第 2 次優化 — 2026-07-01 起　逐筆交易改造（✅ 全部完成，Phase 1–7）
 
 根據真實餐廳老闆回饋，針對兩個核心痛點做第 2 次優化：**(1)** 記帳項目太多、輸入困難；**(2)** 帳目呈現想更簡潔（月曆 + 逐筆列表）。
 
 **設計 spec**：`docs/superpowers/specs/2026-07-01-line-item-transactions-redesign-design.md`
-**分支**：`feature/line-item-transactions-redesign`｜**分 6 期實作**
+**分支**：`feature/line-item-transactions-redesign`｜**分 7 期實作**
 
 **Phase 1 — 逐筆交易資料層（✅ 完成）**
 - `Transaction` 型別：改以逐筆交易為記帳單位（同天同類別可多筆），金額正數 + `type` 決定收支，`subId` 為二級類別
@@ -232,7 +232,7 @@ Ready-mPOS/
 - 「記帳」tab 改用 `LedgerPage`：單日逐筆交易列表 + 右下浮動「＋」FAB
 - `TransactionSheet` 底部 Sheet：收支切換 / 一級類別 / 二級（自動帶入預設，`resolveDefaultSub` 防 dangling）/ 金額 / 備註 / 日期 / 「儲存並繼續」連續記帳 / 編輯可刪
 - 寫入本機 `transactions`；Playwright E2E 覆蓋新增/預設二級/儲存並繼續/編輯/刪除/重整持久
-- ⚠️ Dashboard・月結・雲端同步仍為 `DailyRecord`，待 Phase 5（雲端同步）與 Phase 6/7（月曆落地頁／Dashboard・月結重算）收斂（開發分支暫時分歧，見設計 spec）
+- ⚠️ Dashboard・月結・雲端同步當時仍為 `DailyRecord`，已於 Phase 5（雲端同步）與 Phase 6/7（月曆落地頁／Dashboard・月結重算）收斂（開發分支曾暫時分歧，見設計 spec）
 
 **Phase 5 — 逐筆交易雲端同步（✅ 完成）**
 - 月份分頁改為新格式：一列一筆交易 `日期|收支|一級類別|二級類別|金額|備註|id`，表頭固定不隨類別增減變動；`lib/txSheets.ts` 純函式（`isNewTxFormat`/`txToRow`/`rowToTx`/`mergeTransactionsById`）Vitest 覆蓋
@@ -240,11 +240,17 @@ Ready-mPOS/
 - `backupSpreadsheet`：改寫任何舊格式分頁前，先用 Drive `files.copy` 建立時間戳備份副本（`SCOPES` 新增 `drive.file`，既有使用者需重新授權）；🔒 備份失敗則本輪同步跳過所有舊格式改寫，即使該月同時有本機待同步交易也不動
 - `useSyncService.ts` 的 `syncAll`/`restoreFromSheets`/`clearLocalData` 全面切換到 `db.transactions`，以 `Transaction.id` 去重對帳（本機 `PENDING` 優先）
 - ✅ cutover 交易重複已解決（Task 6）：`explodeDailyRecord` 改用決定性 id，本機遷移與雲端 re-explode 出的同批交易 id 相同，`mergeTransactionsById` 可正確去重，cutover 首次同步不再重複
-- ⚠️ Dashboard・月結仍讀 `DailyRecord`（含手續費後淨額），待 Phase 7
+- ⚠️ Dashboard・月結當時仍讀 `DailyRecord`（含手續費後淨額），已於 Phase 7 改用交易重算
 
 **Phase 6 — 帳目頁月曆 + 落地頁（✅ 完成）**
 - `lib/calendar.ts` 純函式（`buildMonthMatrix`／`monthDayNets`／`shiftMonth`，Vitest 覆蓋）+ `MonthCalendar` 元件：月曆每格顯示當日淨額（收入−支出、不扣手續費）、今天描邊、選定填色、可切月、點日切換單日列表
 - 「帳目」頁 = 月曆 + 單日逐筆列表 + FAB；App **落地頁與導覽首項改為「帳目」**（導覽：帳目／首頁／月結／設定）；Playwright E2E 覆蓋
-- ⚠️ 月曆淨額暫不扣手續費，Phase 7 一併與 Dashboard／月結重算評估一致性
+- ⚠️ 月曆淨額不扣手續費 —— Phase 7 已評估並刻意保留此差異（見下方）
 
-**Phase 7（規劃中）**：Dashboard・月結改用 Transaction 重算（含手續費後淨額），移除對 `DailyRecord` 的讀取依賴。
+**Phase 7 — Dashboard・月結改用 Transaction 重算（✅ 完成）**
+- 新增 `lib/aggregate.ts` 的 `buildDailyRecordsFromTx` 純函式 adapter：把逐筆交易依日期合成 `DailyRecord[]`，讓 `DashboardPage`／`MonthlyReportPage` 既有的 `dayIncome`/`dayExpense`/`calcFees`/`TrendChart`/`CategoryBars` 邏輯零改動重用
+- 兩頁改用 `useDayTransactions`/`useMonthTransactions` 取逐筆交易，不再 import `useDailyRecord`/`useMonthlyRecords`
+- **刻意保留的定義差異**：月曆（Phase 6）每日淨額為**毛額**（收入−支出，不扣手續費），Dashboard Hero「今日淨額」為**扣手續費後**淨額——用途不同（月曆看全月概況、Hero 看當日實收），評估後不強行統一
+- Playwright E2E 覆蓋：帳目用 FAB 新增一筆今日收入 → 首頁今日淨額 Hero 反映該筆 → 月結本月總收入含該筆
+
+第 2 次優化（逐筆交易改造）至此 **Phase 1–7 全部完成**。cutover（併回 `main`、改用正式試算表名、對真實使用者資料執行遷移）為使用者核准的硬停，尚未執行，分支仍使用 `AUTO_SHEET_NAME` 測試試算表名。
