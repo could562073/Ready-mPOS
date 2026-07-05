@@ -59,7 +59,7 @@ Ready-mPOS/
 | Google 登入持久化（localStorage token，50 分鐘自動刷新） | ✅ |
 | 打烊提醒推播通知（自訂時間，Service Worker） | ✅ |
 | GitHub Pages 自動部署 | ✅ |
-| 逐筆交易模型 + 月曆列表主畫面 + 二級分類（第 2 次優化） | 🚧 進行中（Phase 1–5 完成：資料層／二級分類／記帳 UI／雲端同步；月曆落地頁 Phase 6、Dashboard/月結重算 Phase 7 待做） |
+| 逐筆交易模型 + 月曆列表主畫面 + 二級分類（第 2 次優化） | 🚧 進行中（Phase 1–6 完成：資料層／二級分類／記帳 UI／雲端同步／月曆落地頁；Dashboard・月結重算 Phase 7 待做） |
 
 ## Google Sheets 同步
 
@@ -240,6 +240,11 @@ Ready-mPOS/
 - `backupSpreadsheet`：改寫任何舊格式分頁前，先用 Drive `files.copy` 建立時間戳備份副本（`SCOPES` 新增 `drive.file`，既有使用者需重新授權）；🔒 備份失敗則本輪同步跳過所有舊格式改寫，即使該月同時有本機待同步交易也不動
 - `useSyncService.ts` 的 `syncAll`/`restoreFromSheets`/`clearLocalData` 全面切換到 `db.transactions`，以 `Transaction.id` 去重對帳（本機 `PENDING` 優先）
 - ✅ cutover 交易重複已解決（Task 6）：`explodeDailyRecord` 改用決定性 id，本機遷移與雲端 re-explode 出的同批交易 id 相同，`mergeTransactionsById` 可正確去重，cutover 首次同步不再重複
-- ⚠️ Dashboard・月結仍讀 `DailyRecord`，待 Phase 7；月曆落地頁待 Phase 6
+- ⚠️ Dashboard・月結仍讀 `DailyRecord`（含手續費後淨額），待 Phase 7
 
-**Phase 6–7（規劃中）**：Phase 6 — 帳目頁月曆＋逐筆列表落地頁、導覽調整；Phase 7 — Dashboard・月結改用 Transaction 重算，移除對 `DailyRecord` 的讀取依賴。
+**Phase 6 — 帳目頁月曆 + 落地頁（✅ 完成）**
+- `lib/calendar.ts` 純函式（`buildMonthMatrix`／`monthDayNets`／`shiftMonth`，Vitest 覆蓋）+ `MonthCalendar` 元件：月曆每格顯示當日淨額（收入−支出、不扣手續費）、今天描邊、選定填色、可切月、點日切換單日列表
+- 「帳目」頁 = 月曆 + 單日逐筆列表 + FAB；App **落地頁與導覽首項改為「帳目」**（導覽：帳目／首頁／月結／設定）；Playwright E2E 覆蓋
+- ⚠️ 月曆淨額暫不扣手續費，Phase 7 一併與 Dashboard／月結重算評估一致性
+
+**Phase 7（規劃中）**：Dashboard・月結改用 Transaction 重算（含手續費後淨額），移除對 `DailyRecord` 的讀取依賴。
