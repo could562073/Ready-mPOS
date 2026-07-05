@@ -1,4 +1,3 @@
-import { newId } from './ids'
 import type { DailyRecord, Transaction } from '../types/index'
 
 // TxSeed：拆解後準備寫入 Dexie 的交易資料，localId 由 DB 層（++localId）自動產生，故不包含在內
@@ -6,6 +5,15 @@ export type TxSeed = Omit<Transaction, 'localId'>
 
 // 全形分隔符號，用於把「日備註」附加到當天第一筆交易的 note 後面
 const DAY_NOTE_SEPARATOR = '｜'
+
+// 決定性交易 ID：同一 (日期, 收支, 一級類別) 永遠導出同一 id。
+// 目的：本機遷移 explode 與雲端對同批舊格式資料 re-explode 產生「相同 id」，
+//      讓 mergeTransactionsById 能以 id 去重，避免 cutover 一次性重複與備份失敗路徑的無上限累積。
+export function deterministicTxId(
+  date: string, type: 'income' | 'expense', categoryId: string,
+): string {
+  return `mpos:${date}:${type}:${categoryId}`
+}
 
 /**
  * 將舊版 DailyRecord（收入/支出為 Record<類別id, 金額>）拆解成逐筆 Transaction。
@@ -20,7 +28,7 @@ const DAY_NOTE_SEPARATOR = '｜'
  */
 export function explodeDailyRecord(
   r: DailyRecord,
-  makeId: () => string = newId,
+  makeId: (date: string, type: 'income' | 'expense', categoryId: string) => string = deterministicTxId,
   now: string = new Date().toISOString(),
 ): TxSeed[] {
   const result: TxSeed[] = []
@@ -29,7 +37,7 @@ export function explodeDailyRecord(
   for (const [categoryId, amount] of Object.entries(r.incomes)) {
     if (!amount) continue // 金額 0（或 falsy）不產生交易
     result.push({
-      id: makeId(),
+      id: makeId(r.date, 'income', categoryId),
       date: r.date,
       type: 'income',
       categoryId,
@@ -46,7 +54,7 @@ export function explodeDailyRecord(
   for (const [categoryId, amount] of Object.entries(r.expenses)) {
     if (!amount) continue
     result.push({
-      id: makeId(),
+      id: makeId(r.date, 'expense', categoryId),
       date: r.date,
       type: 'expense',
       categoryId,

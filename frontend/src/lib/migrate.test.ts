@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { explodeDailyRecord } from './migrate'
+import { explodeDailyRecord, deterministicTxId } from './migrate'
 import type { DailyRecord } from '../types/index'
 
 // 測試用固定時間戳與可預期 id 產生器，確保結果可斷言
@@ -98,5 +98,27 @@ describe('explodeDailyRecord', () => {
     const result = explodeDailyRecord(record, makeIdGen(), FIXED_NOW)
 
     expect(result).toEqual([])
+  })
+})
+
+// 全期 review 揪出的重複 bug：explodeDailyRecord 預設用隨機 id 會讓本機遷移與雲端 re-explode
+// 對同一批舊資料產生不同 id，mergeTransactionsById 無法去重。改用決定性 id 讓 re-explode 冪等。
+describe('deterministicTxId / explode 冪等', () => {
+  const rec = {
+    date: '2026-07-01',
+    incomes: { cash: 100 }, expenses: { food: 50 },
+    incomeNotes: {}, expenseNotes: {}, notes: '',
+    syncStatus: 'SYNCED' as const, createdAt: 'x', updatedAt: 'x',
+  }
+  it('同一 (日期,收支,一級) 永遠得到同一 id', () => {
+    expect(deterministicTxId('2026-07-01', 'income', 'cash')).toBe('mpos:2026-07-01:income:cash')
+    expect(deterministicTxId('2026-07-01', 'income', 'cash'))
+      .toBe(deterministicTxId('2026-07-01', 'income', 'cash'))
+  })
+  it('預設（不注入 makeId）時 explode 兩次 id 完全相同（冪等，可去重）', () => {
+    const a = explodeDailyRecord(rec).map(t => t.id)
+    const b = explodeDailyRecord(rec).map(t => t.id)
+    expect(a).toEqual(b)
+    expect(a).toEqual(['mpos:2026-07-01:income:cash', 'mpos:2026-07-01:expense:food'])
   })
 })
