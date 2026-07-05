@@ -107,7 +107,7 @@ interface Category {
 - **未知一級類別名稱**：pull 新格式月份分頁時，若一級/二級名稱在本機 `Category` 找不到對應，**保留原字串**存入交易（不丟資料、不擋同步），沿用「未知欄位略過但不污染金額」精神；待使用者之後重建同名類別或手動修正即可對回。
 - **備份 scope**：`backupSpreadsheet` 用 Drive `files.copy`，需要 `drive.file` OAuth scope；`SCOPES` 因此擴充，**既有已登入使用者第一次執行到會觸發重新授權彈窗**（一次性）。
 - **備份失敗的處理**：`backupSpreadsheet` 失敗（配額、權限、網路）→ 該輪同步**完全跳過舊格式分頁改寫**，包含同時有本機 `PENDING` 交易待寫入的舊格式月份也不例外；新格式月份的正常同步不受影響。下次同步重試備份，不做部分改寫以避免「備份沒成功但資料已被覆蓋」的不可逆風險。
-- **⚠️ 已知 cutover 限制（尚未解決，記錄供 cutover 前處理）**：`explodeDailyRecord` 目前用隨機 id。cutover（切回正式試算表、對正式使用者資料執行遷移）首次同步時，本機（v3 upgrade 時就地遷移產生）與雲端 pull 路徑（舊格式 pull 時 re-explode 同一批 `dailyRecords`）會對同一批歷史資料各自產生**不同的隨機 id**，`mergeTransactionsById` 無法辨識兩者是同一筆交易，導致重複匯入。cutover 前需擇一解法：(a) cutover 當次改走 `restoreFromSheets`（雲端整批覆蓋本機）單一方向，不做雙向合併；或 (b) 把 `explodeDailyRecord` 的 id 產生方式改為根據 `(date, categoryId, subId, amount, note, 序號)` 等欄位的 deterministic id，讓本機與雲端兩條路徑對同一筆歷史資料算出相同 id。此限制只影響 cutover 那一次性遷移，不影響 Phase 5 之後日常的逐筆交易同步。
+- **✅ cutover 交易重複已解決（Task 6）**：`explodeDailyRecord` 現採決定性 id `mpos:<date>:<type>:<categoryId>`（不再用隨機 id）。cutover 首次同步時，本機（v3 upgrade 時就地遷移產生）與雲端 pull 路徑（舊格式 pull 時 re-explode 同一批 `dailyRecords`）對同一批歷史資料產生**相同的決定性 id**，`mergeTransactionsById` 可正確辨識並去重，不再導致重複匯入。此修正自動套用於新安裝及 v3 upgrade 過程（upgrade 僅執行一次）；在此修正前已於 dev 分支跑過舊版遷移（隨機 id）的裝置，其本機交易仍為舊隨機 id，可使用 `restoreFromSheets`（覆蓋本機）或 `clearLocalData`（重置）重新同步獲得新決定性 id。此修正只影響 cutover 那一次性遷移及之前的歷史資料，不影響 Phase 5 之後日常的逐筆交易同步。
 
 ## UI / 資訊架構
 
