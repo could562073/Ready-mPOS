@@ -38,11 +38,11 @@
 ## 📊 目前狀態
 
 - **整體**：`IN_PROGRESS`
-- **目前 phase**：**Phase 5（逐筆交易雲端同步）—— Task 1–5 全數完成，全期 review 進行中**
-- **下一步**：Phase 5 全期 review（opus）→ 處理 findings → 標 Phase 5 完成 → Phase 6（月曆落地頁 + 導覽，用 writing-plans 依 spec 撰寫）
-- **最後更新**：2026-07-05（Phase 5 Task 1–5 完成，含 Task 4 review Critical 已修；全期 review dispatch）
+- **目前 phase**：**Phase 6（帳目頁月曆 + 導覽/落地頁）—— 待寫計畫**
+- **下一步**：用 superpowers:writing-plans 依 spec 寫 Phase 6 計畫（月曆格顯示當日淨額、點日篩選、落地頁＝帳目、導覽調整；讀 `useMonthTransactions`；Playwright E2E）→ commit → subagent-driven 執行
+- **最後更新**：2026-07-05（**Phase 5 完整收官**：T1–T6 + 全期 review Approved + Important 已由 T6 修；進 Phase 6）
 
-**Phase 5 commits**：`78e7797`(T1) `685fc69`(T2) `98e9bed`(T3) `7740aa0`+`c8591d0`fix(T4) `cd283c9`(T5)｜tsc/vitest(34)/build 皆綠。
+**Phase 5 commits**：`78e7797`(T1) `685fc69`(T2) `98e9bed`(T3) `7740aa0`+`c8591d0`fix(T4) `cd283c9`(T5) `e94ef4b`(T6 決定性 id) `2858383`(docs)｜tsc/vitest(36)/build 皆綠。
 
 ### 📋 Phase 5 手動驗證清單（OAuth 無法 headless，需用戶在真機/測試帳號實測）
 1. **重新授權**：登出再登入 Google（`SCOPES` 新增 `drive.file`）→ 確認授權彈窗出現、同步不報 403。
@@ -61,7 +61,7 @@
 | 2 | 二級分類 CRUD + CategoryEditSheet UI | `plans/2026-07-02-phase2-subcategories.md` | ✅ 完成（5279bff→0903178）；全期 review With fixes，Important #2 已修，#1 轉 Phase 3 |
 | 3 | 試算表隔離 + `_config` subs 序列化 + 🔴 push/pull 資料流失修正（月份格式移 Phase 5，見 D4） | `plans/2026-07-04-phase3-sheets-config-subs.md` | ✅ 完成（9e23d13→034a66d）；全期 review With fixes，Important #1 守衛競態已修 |
 | 4 | FAB + 交易記帳底部 Sheet + LedgerPage 單日列表（寫 transactions、帶入 defaultSubId） | `plans/2026-07-04-phase4-transaction-entry-sheet.md` | ✅ 完成（`fea0f85`→`7810415`）；全期 review Spec✅/Quality Approved、零 Critical/Important；4 Minor 入下方清單 |
-| 5 | **月份分頁逐筆交易新格式 + 舊格式偵測改寫 + Drive 備份 + `Transaction.id` 對帳 + syncAll 切換**（D7 從原 Phase 5 拆出的 sync 資料層） | `plans/2026-07-04-phase5-sheets-transaction-sync.md` | 🔄 執行中（計畫已寫，開始 Task 1） |
+| 5 | **月份分頁逐筆交易新格式 + 舊格式偵測改寫 + Drive 備份 + `Transaction.id` 對帳 + syncAll 切換 + 決定性 id**（D7 拆出的 sync 資料層） | `plans/2026-07-04-phase5-sheets-transaction-sync.md` | ✅ 完成（`78e7797`→`2858383`，T1–T6）；全期 review Spec✅/Approved/零 Critical；Important（explode-id 累積重複）已由 T6 決定性 id 修 |
 | 6 | 帳目頁月曆（月淨額格）+ 導覽/落地頁調整（落地頁＝帳目） | （待 loop 撰寫） | ⬜ 未開始 |
 | 7 | Dashboard / 月結改用 Transaction 重算 | （待 loop 撰寫） | ⬜ 未開始 |
 
@@ -81,7 +81,7 @@
 ## 🚧 Blockers / 待用戶決策
 
 - ✅ **已解除**：分支雲端同步已由 Phase 3 Task 1 隔離到獨立測試試算表「Ready-mPOS 記帳（逐筆交易測試）」，開發期不再碰正式站資料。
-- 🔴 **[cutover 前必決，見 D8 Important]** cutover 首次同步的交易重複問題：`explodeDailyRecord` 隨機 id 使本機遷移份與雲端 re-explode 份無法以 id 對帳去重 → 帳目翻倍。**cutover 硬停時請用戶擇一**：(a) cutover 首次同步走 `restoreFromSheets`（clear→bulkAdd，單份、天然無重複）；(b) 替 explode 導入 deterministic id（如 `date|type|categoryId|序號` 雜湊），讓兩端產生相同 id。dev 分支不受影響（測試表為新格式），故不阻擋 Phase 5–7。
+- ✅ **已解除（Phase 5 Task 6）**：cutover 交易重複問題已由 `explodeDailyRecord` 改用**決定性 id**（`mpos:<date>:<type>:<categoryId>`）根治——本機 v3 遷移與雲端 re-explode 產生相同 id，`mergeTransactionsById` 正確去重，cutover 一次性重複與備份失敗路徑的累積重複皆消除。殘留 caveat：在此修正前已於 dev 分支跑過舊版遷移的裝置，本機舊交易仍是隨機 id、可用 restore/clearLocalData 重置；全新安裝/正式 cutover 一開始即一致。
 
 ## 📝 決策日誌（loop 自行做的判斷，供用戶事後 review）
 
@@ -96,7 +96,9 @@
 
 - **D8（2026-07-04，Phase 5 Task 4 review）**：opus 全審揪出兩個問題，均源自計畫 Step 2 的邏輯漏洞（controller 自己在計畫中寫錯）：
   - **🔴 Critical（已修）**：備份失敗時「舊格式∩有本機 PENDING」的月份仍被 clear+覆蓋，違反「無成功備份不改寫任何舊格式分頁」（guardrail 9b）。因 v3 遷移把所有歷史交易標 PENDING，cutover 時 `pendingMonths` ⊇ 全部舊格式月份，屬紅線主場景。**已 fix**：`monthsToRewrite` 改為「凡屬 `oldSet` 的月份僅在 `allowOldRewrite` 時納入，即使有 PENDING」。計畫 Step 2 程式碼亦同步修正（事實來源一致）。此修正解決的是計畫內部與 guardrail 9b 的矛盾——安全約束優先，故 controller 直接修不另問用戶。
-  - **🟠 Important（延到 cutover，需用戶決策）**：`explodeDailyRecord` 用隨機 `newId()`，本機遷移 explode（PENDING）與雲端對同批舊格式 re-explode（SYNCED seeds）產生**不同 id** → `mergeTransactionsById` 視為互不相交全部 `toAdd` → 同一筆帳本機出現兩份、push 後雲端亦翻倍。**僅在 cutover 對正式站舊格式資料首次同步時爆發**；dev 用測試試算表（新格式）不受影響，故不阻擋 Phase 5。**已列入下方 Blockers + cutover 檢查清單**：cutover 前須擇一解法（改走 `restoreFromSheets` 的 clear→bulkAdd 單份路徑／或替 explode 導入 deterministic id），由用戶於 cutover 硬停時裁決。
+  - **🟠 Important（✅ 已由 Phase 5 Task 6 決定性 id 解決，見 D9）**：`explodeDailyRecord` 用隨機 `newId()`，本機遷移 explode（PENDING）與雲端對同批舊格式 re-explode（SYNCED seeds）產生**不同 id** → `mergeTransactionsById` 視為互不相交全部 `toAdd` → 同一筆帳本機出現兩份、push 後雲端亦翻倍。**僅在 cutover 對正式站舊格式資料首次同步時爆發**；dev 用測試試算表（新格式）不受影響，故不阻擋 Phase 5。**已列入下方 Blockers + cutover 檢查清單**：cutover 前須擇一解法（改走 `restoreFromSheets` 的 clear→bulkAdd 單份路徑／或替 explode 導入 deterministic id），由用戶於 cutover 硬停時裁決。
+
+- **D9（2026-07-05，Phase 5 全期 review + Task 6）**：opus 全期整合 review = Spec✅/Quality Approved/零 Critical，確認 `txToRow⇄rowToTx` round-trip 對稱、pull→寫→再pull 冪等（正常路徑）、無回歸。唯一新 Important：`explodeDailyRecord` 隨機 id 在**備份失敗路徑**（舊格式月份被 pull+explode 卻未 rewrite）會使本機交易每輪同步**無上限累積重複**（與 D8 cutover 重複同根因）。controller 判斷這已非「cutover 設計選擇」而是 sync 迴圈的實際 bug，且決定性 id 客觀優於原 D8 選項(a)，故**新增 Task 6** 讓 `explodeDailyRecord` 用決定性 id `mpos:<date>:<type>:<categoryId>`（re-explode 冪等）——一次解掉本條 + D8 cutover Blocker。Task 6 已實作 + review clean（36 tests 綠）。文檔（CLAUDE/AGENTS/README/spec）已同步改為「已解決」。此為 autonomous 修 bug（純函式、有測試、非破壞），未另問用戶。
 
 ## 🧹 Minor findings 待最終全分支 review triage
 
@@ -104,3 +106,5 @@
 - **[Phase 4] `LedgerPage.tsx` PENDING 同步點用 magic color `'#F59E0B'`**：應改用 token（`T.sun`/`T.sunInk`）。純外觀。
 - **[Phase 4] `LedgerPage.tsx` `toLocalDateString`/`shiftDate` 與 `App.tsx` 重複**：計畫明訂各置一份，可接受；未來抽到 `lib/` 避免漂移。
 - **[Phase 4] `TransactionSheet.tsx` 編輯已停用類別時該類別 chip 不高亮**（被 `c.enabled` 濾掉），preview 退回 `tag`/`coral`；儲存仍正確保留原 `categoryId`。邊角案例。
+- **[Phase 5] 跨裝置刪除不傳播**：`mergeTransactionsById` 只 add/update，雲端已刪除的列本機仍留 SYNCED；若該月因其他 PENDING/舊格式被 rewrite 會把本機這筆「已在雲端刪除」的交易復活寫回。計畫未要求刪除同步，非違規；Phase 6/7 UI 落地時一併考量（可能需 tombstone/軟刪除）。
+- **[Phase 5] `isNewTxFormat` 理論誤判**（`txSheets.ts`）：舊格式月份若剛好有名為「收支」或「id」的類別，表頭含該字會被誤判為新格式。實務極不可能（預設類別無此名），僅記錄。
