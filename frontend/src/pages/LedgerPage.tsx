@@ -5,6 +5,8 @@ import { Icon } from '../components/Icon'
 import { useDayTransactions } from '../hooks/useTransactions'
 import { getCategories } from '../lib/categories'
 import { TransactionSheet } from '../components/TransactionSheet'
+import { MonthCalendar } from '../components/MonthCalendar'
+import { shiftMonth } from '../lib/calendar'
 import type { Transaction } from '../types'
 
 interface LedgerPageProps {
@@ -52,6 +54,14 @@ export function LedgerPage({ date, onDateChange }: LedgerPageProps) {
 
   return (
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* 月曆：顯示每日淨額，可切月、點日切換選定日期 */}
+      <MonthCalendar
+        month={date.slice(0, 7)}
+        selectedDate={date}
+        onSelectDate={onDateChange}
+        onShiftMonth={delta => onDateChange(`${shiftMonth(date.slice(0, 7), delta)}-01`)}
+      />
+
       {/* 日期標頭：前後一天切換 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px' }}>
         <button
