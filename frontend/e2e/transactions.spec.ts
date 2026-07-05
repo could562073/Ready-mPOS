@@ -1,7 +1,8 @@
 import { test, expect, type Page, type Locator } from '@playwright/test'
 
-// 逐筆交易記帳 E2E：驗證「記帳」tab 的 LedgerPage + TransactionSheet
-// 新增（含二級預設帶入）／儲存並繼續／編輯／刪除／reload 後持久化 全流程。
+// 逐筆交易記帳 E2E：驗證「帳目」tab（Phase 6：落地頁 + 月曆）的 LedgerPage + TransactionSheet
+// 新增（含二級預設帶入）／儲存並繼續／編輯／刪除／reload 後持久化 全流程，
+// 以及帳目落地頁 + 月曆點日切換的行為。
 // 種子沿用 subcategories.spec 的預設類別陣列，額外讓「雜支」帶二級「瓦斯費」且設為預設，
 // 以驗證選定一級類別時 resolveDefaultSub 自動帶入的行為。
 
@@ -58,7 +59,7 @@ test('LedgerPage：FAB 新增（二級預設帶入）／儲存並繼續／編輯
   const errors = collectPageErrors(page)
 
   await page.goto('/')
-  await navTab(page, '記帳').click()
+  await navTab(page, '帳目').click()
 
   // 首次進入本日尚無交易 → 空狀態文字
   await expect(page.getByText('本日尚無記帳，點右下＋新增')).toBeVisible()
@@ -112,12 +113,41 @@ test('LedgerPage：FAB 新增（二級預設帶入）／儲存並繼續／編輯
   await expect(page.getByText('編輯交易')).toBeHidden()
   await expect(txRow(page, '現金', '500')).toHaveCount(0)
 
-  // 7. reload 後回「記帳」tab → 剩餘交易仍在（雜支 150、現金 300），Dexie 持久
+  // 7. reload 後回「帳目」tab → 剩餘交易仍在（雜支 150、現金 300），Dexie 持久
   await page.reload()
-  await navTab(page, '記帳').click()
+  await navTab(page, '帳目').click()
   await expect(txRow(page, '雜支', '150')).toBeVisible()
   await expect(txRow(page, '現金', '300')).toBeVisible()
   await expect(txRow(page, '現金', '500')).toHaveCount(0)
+
+  expect(errors).toEqual([])
+})
+
+test('帳目為落地頁、月曆顯示當日淨額並可點日切換', async ({ page }) => {
+  const errors = collectPageErrors(page)
+
+  await page.goto('/')
+
+  // (a) 落地頁即「帳目」：不需點任何 tab，月曆星期列（單字「日」）與空狀態文案即可見
+  await expect(page.getByText('日', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('本日尚無記帳，點右下＋新增')).toBeVisible()
+
+  // (b) 用 FAB 新增一筆收入（沿用上一個 test 的新增交易步驟）：選「收入」→「現金」→ 金額 800 → 儲存
+  await page.getByRole('button', { name: '新增交易' }).click()
+  await expect(page.getByText('新增交易').last()).toBeVisible()
+  await page.getByRole('button', { name: '收入', exact: true }).click()
+  await page.getByRole('button', { name: '類別 現金' }).click()
+  await page.getByLabel('金額', { exact: true }).fill('800')
+  await page.getByRole('button', { name: '儲存', exact: true }).click()
+  await expect(page.getByText('新增交易').last()).toBeHidden()
+
+  // 該筆金額出現在當日交易列表
+  await expect(txRow(page, '現金', '800')).toBeVisible()
+
+  // (c) 點「前一天」切換到沒有交易的日子 → 單日列表切回空狀態文案
+  await page.getByRole('button', { name: '前一天' }).click()
+  await expect(page.getByText('本日尚無記帳，點右下＋新增')).toBeVisible()
+  await expect(txRow(page, '現金', '800')).toHaveCount(0)
 
   expect(errors).toEqual([])
 })

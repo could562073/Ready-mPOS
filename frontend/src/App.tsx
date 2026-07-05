@@ -20,15 +20,17 @@ function toLocalDateString(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
+// 導覽順序：帳目（落地頁，月曆＋逐筆列表）→ 首頁 → 月結 → 設定
 const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
+  { id: 'daily',     label: '帳目',   icon: 'calendar' },
   { id: 'dashboard', label: '首頁',   icon: 'home'     },
-  { id: 'daily',     label: '記帳',   icon: 'pencil'   },
   { id: 'monthly',   label: '月結',   icon: 'chart'    },
   { id: 'settings',  label: '設定',   icon: 'settings' },
 ]
 
 function App() {
-  const [tab, setTab] = useState<Tab>('dashboard')
+  // 落地頁改為「帳目」（月曆＋逐筆列表），取代舊的 Dashboard 落地頁
+  const [tab, setTab] = useState<Tab>('daily')
 
   // 啟動時註冊 Service Worker，並將已儲存的提醒設定送給 SW
   useEffect(() => {
