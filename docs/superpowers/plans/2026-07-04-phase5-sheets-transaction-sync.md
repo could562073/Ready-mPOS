@@ -605,6 +605,88 @@ git push origin feature/line-item-transactions-redesign
 
 ---
 
+### Task 6: `explodeDailyRecord` 改用決定性 id（修全期 review Important + 收掉 cutover Blocker）
+
+**背景**：全期 review 指出 `explodeDailyRecord` 用隨機 `newId()`，導致本機遷移份與雲端對同批舊格式資料 re-explode 出的份 **id 不同** → `mergeTransactionsById` 無法去重。兩處爆發：①cutover 首次同步一次性重複；②**備份失敗路徑**（舊格式月份被 pull+explode 但未 rewrite）每輪 `syncAll` **無上限累積重複**。根因單一：非決定性 id。改用決定性 id 讓 re-explode 冪等，一次解掉兩者。
+
+**Files:**
+- Modify: `frontend/src/lib/migrate.ts`
+- Test: `frontend/src/lib/migrate.test.ts`
+
+**Interfaces:**
+- Produces: `deterministicTxId(date, type, categoryId): string`（export）；`explodeDailyRecord` 的 `makeId` 參數改型別為 `(date, type: 'income'|'expense', categoryId: string) => string`，預設 `deterministicTxId`。
+- 註：既有測試若注入 `() => 'fixed'` 之類 `() => string`，因 TS 允許少參數函式賦值給多參數函式型別，**仍相容**，不需改；但需**新增**決定性預設的測試。
+- `lib/transactions.ts` 的 `addTransaction` **維持 `newId()` 隨機 id**（使用者手動新增的交易本就該唯一，不套決定性）——本 task 不動它。
+
+- [ ] **Step 1: 先寫失敗測試（追加到 migrate.test.ts）**
+
+```ts
+import { explodeDailyRecord, deterministicTxId } from './migrate'
+
+describe('deterministicTxId / explode 冪等', () => {
+  const rec = {
+    date: '2026-07-01',
+    incomes: { cash: 100 }, expenses: { food: 50 },
+    incomeNotes: {}, expenseNotes: {}, notes: '',
+    syncStatus: 'SYNCED' as const, createdAt: 'x', updatedAt: 'x',
+  }
+  it('同一 (日期,收支,一級) 永遠得到同一 id', () => {
+    expect(deterministicTxId('2026-07-01', 'income', 'cash')).toBe('mpos:2026-07-01:income:cash')
+    expect(deterministicTxId('2026-07-01', 'income', 'cash'))
+      .toBe(deterministicTxId('2026-07-01', 'income', 'cash'))
+  })
+  it('預設（不注入 makeId）時 explode 兩次 id 完全相同（冪等，可去重）', () => {
+    const a = explodeDailyRecord(rec).map(t => t.id)
+    const b = explodeDailyRecord(rec).map(t => t.id)
+    expect(a).toEqual(b)
+    expect(a).toEqual(['mpos:2026-07-01:income:cash', 'mpos:2026-07-01:expense:food'])
+  })
+})
+```
+
+- [ ] **Step 2: 跑測試確認失敗**
+
+Run: `cd frontend && npx vitest run src/lib/migrate.test.ts`
+Expected: FAIL（`deterministicTxId` 未定義 / 預設 id 目前是隨機）
+
+- [ ] **Step 3: 實作（改 migrate.ts）**
+
+```ts
+// 決定性交易 ID：同一 (日期, 收支, 一級類別) 永遠導出同一 id。
+// 目的：本機遷移 explode 與雲端對同批舊格式資料 re-explode 產生「相同 id」，
+//      讓 mergeTransactionsById 能以 id 去重，避免 cutover 一次性重複與備份失敗路徑的無上限累積。
+export function deterministicTxId(
+  date: string, type: 'income' | 'expense', categoryId: string,
+): string {
+  return `mpos:${date}:${type}:${categoryId}`
+}
+```
+把 `explodeDailyRecord` 的 `makeId` 參數改為：
+```ts
+makeId: (date: string, type: 'income' | 'expense', categoryId: string) => string = deterministicTxId,
+```
+並把兩處 `id: makeId()` 改為 `id: makeId(r.date, 'income', categoryId)` / `id: makeId(r.date, 'expense', categoryId)`。移除已不再使用的 `import { newId } from './ids'`（若無其他用途）。
+
+- [ ] **Step 4: 跑測試確認通過（含既有 migrate 測試不回歸）**
+
+Run: `cd frontend && npm test`
+Expected: 全綠（既有 migrate 測試 + 新增決定性測試 + 其他）
+
+- [ ] **Step 5: 驗證編譯/建置**
+
+Run: `cd frontend && npx tsc --noEmit && npm run build`
+Expected: 皆成功
+
+- [ ] **Step 6: commit**
+
+```bash
+git add frontend/src/lib/migrate.ts frontend/src/lib/migrate.test.ts
+git commit -m "fix: explodeDailyRecord 改用決定性 id，修 re-explode 重複（全期 review Important + cutover Blocker）"
+git push origin feature/line-item-transactions-redesign
+```
+
+> 註：已在分支上遷移過（v3 已套用）的 dev 裝置，其本機交易仍是舊隨機 id、不會回溯改變（upgrade 只跑一次）；可用 restore/clearLocalData 重置。對**全新安裝 / 正式 cutover**（main），v3 upgrade 一開始就用決定性 id，兩端一致——cutover 重複問題根除。
+
 ## 完成準則（Definition of Done）
 - [ ] Task 1–2 純函式 Vitest 全綠；`npx tsc --noEmit`、`npm run build` 綠。
 - [ ] `syncAll`/`restoreFromSheets` 已同步 `db.transactions`；舊格式改寫前必先 `backupSpreadsheet`。
