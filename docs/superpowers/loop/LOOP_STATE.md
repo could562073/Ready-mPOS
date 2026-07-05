@@ -37,11 +37,14 @@
 
 ## 📊 目前狀態
 
-- **整體**：`IN_PROGRESS`
-- **目前 phase**：**Phase 7（Dashboard / 月結改用 Transaction 重算）—— 計畫已寫，開始執行**（第 2 次優化最後一期）
-- **下一步**：subagent-driven 跑 Phase 7 Task 1（`lib/aggregate.ts` `buildDailyRecordsFromTx` 純函式）→ Task 2（Dashboard 換資料源）→ Task 3（月結換資料源）→ Task 4（E2E + 文檔收官）
-- **設計要點**：adapter `buildDailyRecordsFromTx(txs)→合成 DailyRecord[]`，兩頁只換資料源、既有 `dayIncome/dayExpense/calcFees/TrendChart/CategoryBars` 零改動重用（最低風險）。月曆淨額維持毛額（不扣費）、Hero 維持扣費後，差異刻意保留（見計畫範圍取捨）。
-- **最後更新**：2026-07-06（Phase 7 計畫完成，開始 Task 1）
+- **整體**：`✅ 分支完成（Phase 1–7 全部落地並 review 過）` — loop 任務達成，**併 main 待用戶決策 cutover（硬停，見下）**
+- **目前 phase**：**全部完成**。Phase 7（Dashboard/月結改用 Transaction 重算）T1–T4 + 全期 review Approved/零 Critical。
+- **下一步（需用戶決策，loop 不自動做）**：
+  1. 🔴 **cutover / 併 main**：把 `useSyncService.ts` 的 `AUTO_SHEET_NAME` 改回正式名「Ready-mPOS 記帳」→ 對真實使用者資料執行遷移（已有 Drive 備份保護 + 決定性 id 去重）→ 合併/PR 到 main（一 push 即自動部署正式站）。**這步 guardrail 9c 明訂硬停、需用戶明確批准。**
+  2. 或先開 PR 讓用戶 review 整個第 2 次優化，暫不 cutover。
+  3. 可選清理（另開 refactor，非本期）：移除 `DailyEntryPage`/`useDailyRecord`/`useMonthlyRecords`（UI 已不用）。
+- **設計要點**：adapter `buildDailyRecordsFromTx(txs)→合成 DailyRecord[]`，兩頁只換資料源、既有 `dayIncome/dayExpense/calcFees/TrendChart/CategoryBars` 零改動重用。月曆淨額毛額 vs Hero 扣費後差異刻意保留。
+- **最後更新**：2026-07-06（**第 2 次優化 Phase 1–7 全部完成**；併 main 待用戶 cutover 決策）
 
 **Phase 6 commits**：`817d42b`(T1) `6580684`(T2) `2dc979e`(T3 E2E 5 passed) `f579dba`(T4 docs)｜各 task + 全期 review 皆 Spec✅/Approved｜tsc/vitest(41)/build/playwright(5) 綠。
 
@@ -66,7 +69,7 @@
 | 4 | FAB + 交易記帳底部 Sheet + LedgerPage 單日列表（寫 transactions、帶入 defaultSubId） | `plans/2026-07-04-phase4-transaction-entry-sheet.md` | ✅ 完成（`fea0f85`→`7810415`）；全期 review Spec✅/Quality Approved、零 Critical/Important；4 Minor 入下方清單 |
 | 5 | **月份分頁逐筆交易新格式 + 舊格式偵測改寫 + Drive 備份 + `Transaction.id` 對帳 + syncAll 切換 + 決定性 id**（D7 拆出的 sync 資料層） | `plans/2026-07-04-phase5-sheets-transaction-sync.md` | ✅ 完成（`78e7797`→`2858383`，T1–T6）；全期 review Spec✅/Approved/零 Critical；Important（explode-id 累積重複）已由 T6 決定性 id 修 |
 | 6 | 帳目頁月曆（月淨額格）+ 導覽/落地頁調整（落地頁＝帳目） | `plans/2026-07-05-phase6-calendar-ledger-landing.md` | ✅ 完成（`817d42b`→`f579dba`，T1–T4）；全期 review Spec✅/Approved/零 Critical；E2E 5 passed |
-| 7 | Dashboard / 月結改用 Transaction 重算（第 2 次優化最後一期） | `plans/2026-07-05-phase7-dashboard-monthly-recompute.md` | 🔄 執行中（計畫已寫，開始 Task 1） |
+| 7 | Dashboard / 月結改用 Transaction 重算（第 2 次優化最後一期） | `plans/2026-07-05-phase7-dashboard-monthly-recompute.md` | ✅ 完成（`26f55fd`→`3891ccc`，T1–T4）；全期 review Spec✅/Approved/零 Critical；E2E 6 passed；**舊 DailyRecord 模型 UI 退場** |
 
 ### Task 0（bootstrap，Phase 2 前做一次）：Playwright E2E 基礎
 
