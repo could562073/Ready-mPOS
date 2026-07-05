@@ -38,12 +38,11 @@
 ## 📊 目前狀態
 
 - **整體**：`IN_PROGRESS`
-- **目前 phase**：**Phase 6（帳目頁月曆 + 導覽/落地頁）—— Task 1–3 完成，Task 4（docs）待做**
-- **下一步**：完成 Phase 6 Task 4（更新 CLAUDE/AGENTS/README 描述月曆落地頁；controller 手動做，因 rate limit 中斷了 docs subagent）→ Phase 6 全期 review（opus）→ 收官 → Phase 7（Dashboard/月結改用 Transaction 重算）
-- **⚠️ Rate limit**：2026-07-05 session limit（Asia/Taipei 21:40 重置）中斷 Task 4 docs subagent；工作樹乾淨（HEAD=`2dc979e`=Task 3），無殘留。重置後或有額度時由 controller 續做 Task 4 + 全期 review。
-- **最後更新**：2026-07-05（Phase 6 Task 1–3 完成並 review 過；Task 4 docs 待補）
+- **目前 phase**：**Phase 7（Dashboard / 月結改用 Transaction 重算）—— 待寫計畫**（第 2 次優化最後一期）
+- **下一步**：用 superpowers:writing-plans 依 spec 寫 Phase 7 計畫（`calcFees` 吃 `Transaction[]`、Dashboard/月結從 `useMonth/DayTransactions` 重算含手續費後淨額、移除對 `DailyRecord` 的讀取依賴；月曆淨額是否改為扣手續費一併評估；E2E）→ commit → subagent-driven 執行
+- **最後更新**：2026-07-05（**Phase 6 完整收官**：T1–T4 + 全期 review Approved/零 Critical；進 Phase 7。rate limit 中斷的 Task 4 docs 已由 controller 手動補完）
 
-**Phase 6 commits**：`817d42b`(T1 月曆純函式) `6580684`(T2 MonthCalendar+掛帳目頁) `2dc979e`(T3 落地頁/導覽改帳目+E2E 5 passed)｜各 task review 皆 Spec✅/Approved｜tsc/vitest(41)/build/playwright(5) 綠。
+**Phase 6 commits**：`817d42b`(T1) `6580684`(T2) `2dc979e`(T3 E2E 5 passed) `f579dba`(T4 docs)｜各 task + 全期 review 皆 Spec✅/Approved｜tsc/vitest(41)/build/playwright(5) 綠。
 
 **Phase 5 commits**：`78e7797`(T1) `685fc69`(T2) `98e9bed`(T3) `7740aa0`+`c8591d0`fix(T4) `cd283c9`(T5) `e94ef4b`(T6 決定性 id) `2858383`(docs)｜tsc/vitest(36)/build 皆綠。
 
@@ -65,8 +64,8 @@
 | 3 | 試算表隔離 + `_config` subs 序列化 + 🔴 push/pull 資料流失修正（月份格式移 Phase 5，見 D4） | `plans/2026-07-04-phase3-sheets-config-subs.md` | ✅ 完成（9e23d13→034a66d）；全期 review With fixes，Important #1 守衛競態已修 |
 | 4 | FAB + 交易記帳底部 Sheet + LedgerPage 單日列表（寫 transactions、帶入 defaultSubId） | `plans/2026-07-04-phase4-transaction-entry-sheet.md` | ✅ 完成（`fea0f85`→`7810415`）；全期 review Spec✅/Quality Approved、零 Critical/Important；4 Minor 入下方清單 |
 | 5 | **月份分頁逐筆交易新格式 + 舊格式偵測改寫 + Drive 備份 + `Transaction.id` 對帳 + syncAll 切換 + 決定性 id**（D7 拆出的 sync 資料層） | `plans/2026-07-04-phase5-sheets-transaction-sync.md` | ✅ 完成（`78e7797`→`2858383`，T1–T6）；全期 review Spec✅/Approved/零 Critical；Important（explode-id 累積重複）已由 T6 決定性 id 修 |
-| 6 | 帳目頁月曆（月淨額格）+ 導覽/落地頁調整（落地頁＝帳目） | `plans/2026-07-05-phase6-calendar-ledger-landing.md` | 🔄 Task 1–3 完成（`817d42b`→`2dc979e`）、review 過；Task 4 docs 待補 + 全期 review 待做（rate limit 中斷） |
-| 7 | Dashboard / 月結改用 Transaction 重算 | （待 loop 撰寫） | ⬜ 未開始 |
+| 6 | 帳目頁月曆（月淨額格）+ 導覽/落地頁調整（落地頁＝帳目） | `plans/2026-07-05-phase6-calendar-ledger-landing.md` | ✅ 完成（`817d42b`→`f579dba`，T1–T4）；全期 review Spec✅/Approved/零 Critical；E2E 5 passed |
+| 7 | Dashboard / 月結改用 Transaction 重算（第 2 次優化最後一期） | （待 loop 撰寫） | ⬜ 未開始 |
 
 ### Task 0（bootstrap，Phase 2 前做一次）：Playwright E2E 基礎
 
@@ -111,3 +110,6 @@
 - **[Phase 4] `TransactionSheet.tsx` 編輯已停用類別時該類別 chip 不高亮**（被 `c.enabled` 濾掉），preview 退回 `tag`/`coral`；儲存仍正確保留原 `categoryId`。邊角案例。
 - **[Phase 5] 跨裝置刪除不傳播**：`mergeTransactionsById` 只 add/update，雲端已刪除的列本機仍留 SYNCED；若該月因其他 PENDING/舊格式被 rewrite 會把本機這筆「已在雲端刪除」的交易復活寫回。計畫未要求刪除同步，非違規；Phase 6/7 UI 落地時一併考量（可能需 tombstone/軟刪除）。
 - **[Phase 5] `isNewTxFormat` 理論誤判**（`txSheets.ts`）：舊格式月份若剛好有名為「收支」或「id」的類別，表頭含該字會被誤判為新格式。實務極不可能（預設類別無此名），僅記錄。
+- **[Phase 6] E2E 未直接點月曆格**（`transactions.spec.ts`）：「點日切換」用的是既有「前一天」箭頭，`MonthCalendar.onSelectDate`（cell click）無 E2E 覆蓋。接線 trivial；建議 Phase 7 補一條「點月曆某日格→單日列表切換」斷言。
+- **[Phase 6 / 既有] Dashboard「編輯今日帳目」不重置日期**（`App.tsx` `handleNavigate`）：只 `setTab` 不把 `dailyDate` 設回今天；使用者在月曆瀏覽他日後點「編輯今日帳目」會落在殘留選定日。Phase 6 未改此行為，但因帳目成落地頁而更易觸發；Phase 7 可選擇性 polish（導向時重置為 today）。
+- **[Phase 6] 月曆淨額不扣手續費 vs Dashboard 扣手續費**：目前月曆每日淨額 = 收入−支出（未扣費），而 Dashboard Hero 顯示扣費後淨額。Phase 7 重算時一併評估是否讓月曆也扣費以一致。
