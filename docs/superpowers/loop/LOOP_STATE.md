@@ -38,9 +38,18 @@
 ## 📊 目前狀態
 
 - **整體**：`IN_PROGRESS`
-- **目前 phase**：**Phase 5（月份分頁逐筆交易同步 + 舊格式改寫 + Drive 備份 + `Transaction.id` 對帳）—— 計畫已寫，開始執行**
-- **下一步**：subagent-driven 跑 Phase 5 Task 1（`txSheets.ts` 交易→列 + 新格式偵測純函式）→ Task 2（列→交易 + id 對帳）→ Task 3（sheets.ts 讀寫/偵測/備份）→ Task 4（syncAll 切換）→ Task 5（docs + 手動驗證清單）
-- **最後更新**：2026-07-04（Phase 5 計畫完成，D7 拆分 sync 資料層；開始 Task 1）
+- **目前 phase**：**Phase 5（逐筆交易雲端同步）—— Task 1–5 全數完成，全期 review 進行中**
+- **下一步**：Phase 5 全期 review（opus）→ 處理 findings → 標 Phase 5 完成 → Phase 6（月曆落地頁 + 導覽，用 writing-plans 依 spec 撰寫）
+- **最後更新**：2026-07-05（Phase 5 Task 1–5 完成，含 Task 4 review Critical 已修；全期 review dispatch）
+
+**Phase 5 commits**：`78e7797`(T1) `685fc69`(T2) `98e9bed`(T3) `7740aa0`+`c8591d0`fix(T4) `cd283c9`(T5)｜tsc/vitest(34)/build 皆綠。
+
+### 📋 Phase 5 手動驗證清單（OAuth 無法 headless，需用戶在真機/測試帳號實測）
+1. **重新授權**：登出再登入 Google（`SCOPES` 新增 `drive.file`）→ 確認授權彈窗出現、同步不報 403。
+2. **舊格式自動備份 + 改寫**：拿一張「舊彙總格式」測試試算表 → 首次同步後確認：Drive 出現「Ready-mPOS 備份 <時間戳>」副本；原月份分頁被改寫成新 7 欄格式 `日期|收支|一級|二級|金額|備註|id`。
+3. **備份失敗保護**：（可暫時撤銷 drive 權限或斷網模擬）確認備份失敗時舊格式分頁**不被覆蓋**、原始資料無損。
+4. **id 去重對帳**：LedgerPage 新增交易 → 換裝置/重整 pull → 同一筆不重複、本機 PENDING 未被雲端覆蓋。
+5. **未知類別容忍**：停用/刪除某類別後，其歷史交易仍以名稱保留、金額不虛增。
 
 **環境備註**：Playwright 已可用兩路——(1) `@playwright/test` E2E（`npm run test:e2e`，驗證門檻本體）；(2) Playwright MCP（`mcp__playwright__browser_*`，controller 探索式抽查/除錯 UI 用）。chromium binary 已裝。
 
