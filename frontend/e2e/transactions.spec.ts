@@ -183,3 +183,45 @@ test('Phase 7：帳目新增交易後，首頁與月結皆反映該筆（transac
 
   expect(errors).toEqual([])
 })
+
+test('TransactionSheet：二級就地新增後自動選取，且記住這個一級下次帶入同一個二級', async ({ page }) => {
+  const errors = collectPageErrors(page)
+
+  await page.goto('/')
+  await navTab(page, '帳目').click()
+
+  // 1. FAB 開啟新增 Sheet → 選「支出」→ 選「食材採購」（種子資料尚未設任何二級）
+  await page.getByRole('button', { name: '新增交易' }).click()
+  await expect(page.getByText('新增交易').last()).toBeVisible()
+  await page.getByRole('button', { name: '支出', exact: true }).click()
+  await page.getByRole('button', { name: '類別 食材採購' }).click()
+
+  // 二級區塊選一級即恆顯示：「無」chip 與「新增二級」按鈕皆可見
+  await expect(page.getByRole('button', { name: '二級 無' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '新增二級' })).toBeVisible()
+
+  // 2. 點「新增二級」→ 在「新二級名稱」輸入「瓦斯費」→ 按「加入」→ 新二級 chip 出現且已選取
+  await page.getByRole('button', { name: '新增二級' }).click()
+  await page.getByLabel('新二級名稱').fill('瓦斯費')
+  await page.getByRole('button', { name: '確認新增二級' }).click()
+  const gasChip = page.getByRole('button', { name: '二級 瓦斯費' })
+  await expect(gasChip).toBeVisible()
+  await expect(gasChip).toHaveCSS('color', 'rgb(255, 255, 255)')
+
+  // 3. 填金額、一般儲存（關閉 Sheet）
+  await page.getByLabel('金額', { exact: true }).fill('220')
+  await page.getByRole('button', { name: '儲存', exact: true }).click()
+  await expect(page.getByText('新增交易').last()).toBeHidden()
+  await expect(txRow(page, '食材採購', '瓦斯費', '220')).toBeVisible()
+
+  // 4. 再開 FAB、重新選同一個支出一級 → 二級預設已是「瓦斯費」（記住上次用的二級）
+  await page.getByRole('button', { name: '新增交易' }).click()
+  await expect(page.getByText('新增交易').last()).toBeVisible()
+  await page.getByRole('button', { name: '支出', exact: true }).click()
+  await page.getByRole('button', { name: '類別 食材採購' }).click()
+  const gasChipAgain = page.getByRole('button', { name: '二級 瓦斯費' })
+  await expect(gasChipAgain).toBeVisible()
+  await expect(gasChipAgain).toHaveCSS('color', 'rgb(255, 255, 255)')
+
+  expect(errors).toEqual([])
+})

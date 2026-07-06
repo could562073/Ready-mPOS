@@ -98,6 +98,7 @@ Ready-mPOS/
 │       │   ├── txSheets.ts            # 逐筆交易⇄Sheets 列轉換、新舊格式偵測、id 對帳（純函式，Phase 5）
 │       │   ├── calendar.ts            # 月曆：月份日期矩陣 / 每日淨額 / 切月（純函式，Phase 6）
 │       │   ├── aggregate.ts           # buildDailyRecordsFromTx：交易→合成 DailyRecord（純函式，Phase 7）
+│       │   ├── subMemory.ts           # 記「每個一級上次用的二級」（localStorage）
 │       │   └── transactions.ts        # 逐筆交易 CRUD（add / update / delete）
 │       ├── db/
 │       │   └── index.ts               # Dexie.js schema（v3：transactions 逐筆交易 store + 自動遷移）
@@ -138,7 +139,7 @@ Ready-mPOS/
 - `explodeDailyRecord`（`lib/migrate.ts`）為**純函式**（不 import Dexie，Vitest 覆蓋）：零金額略過、項目備註帶入、日備註以全形「｜」併入當天第一筆交易；當天無交易則捨棄日備註。
 - `lib/transactions.ts`：`addTransaction / updateTransaction / deleteTransaction`，寫入時設 `syncStatus='PENDING'` 並更新 `updatedAt`。
 - `hooks/useTransactions.ts`：`useMonthTransactions('YYYY-MM')` 以 `date` 前綴查詢（用 `startsWith('YYYY-MM-')` 避免跨月誤配）、`useDayTransactions('YYYY-MM-DD')` 查單日；沿用 `useDailyRecord` 的 `undefined=載入中` 慣例。
-- **記帳 UI（Phase 4）**：「記帳」tab = `LedgerPage`（`useDayTransactions` 單日列表 + 右下 FAB）；`TransactionSheet` 底部 Sheet 收支切換 / 一級類別 chips / 二級 chips（含「無」）/ 金額（正數）/ 備註 / 日期 / 「儲存並繼續」連續記帳 / 編輯可刪。選一級類別時二級自動帶入 `resolveDefaultSub(cat)`（`lib/txDraft.ts` 純函式，Vitest 覆蓋；`defaultSubId` 若已不在 `subs` 內視為「無」）。寫入透過 `lib/transactions.ts`。
+- **記帳 UI（Phase 4）**：「記帳」tab = `LedgerPage`（`useDayTransactions` 單日列表 + 右下 FAB）；`TransactionSheet` 底部 Sheet 收支切換 / 一級類別 chips / 二級 chips（含「無」）/ 金額（正數）/ 備註 / 日期 / 「儲存並繼續」連續記帳 / 編輯可刪。選一級類別時二級自動帶入 `resolveDefaultSub(cat)`（`lib/txDraft.ts` 純函式，Vitest 覆蓋；`defaultSubId` 若已不在 `subs` 內視為「無」）。寫入透過 `lib/transactions.ts`。二級區塊選一級即恆顯示（含「無」+ 既有二級 + 「＋新增二級」），可就地新增二級（`addSub` + `saveCategories`，經 `_config` 同步）並自動選取；選一級時二級改為優先帶入「該一級上次用的二級」（`lib/subMemory` 記憶 + `pickInitialSub` 純函式，無記憶則退回 `defaultSubId`）。
 - ✅ **Dashboard / 月結已於 Phase 7 改讀 `transactions`**（經 `buildDailyRecordsFromTx` 合成 `DailyRecord`，見下方 Phase 7 說明）；帳目頁月曆與落地頁見下方 Phase 6。雲端同步已於 Phase 5 切換到 `transactions`（見下方）。
 
 ### 逐筆交易雲端同步（第 2 次優化 Phase 5）
