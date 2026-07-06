@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { T, colorMap } from '../lib/tokens'
 import { Icon } from './Icon'
-import { getCategories } from '../lib/categories'
+import { getCategories, addSub, saveCategories } from '../lib/categories'
 import { addTransaction, updateTransaction, deleteTransaction } from '../lib/transactions'
-import { resolveDefaultSub } from '../lib/txDraft'
+import { pickInitialSub } from '../lib/txDraft'
+import { getLastSub, rememberLastSub } from '../lib/subMemory'
 import type { Transaction } from '../types'
 
 // 記帳草稿 — 金額一律正數，收支方向由 type 決定
@@ -41,6 +42,10 @@ export function TransactionSheet({ date, editing, onClose, onSaved }: {
   const [draft, setDraft] = useState<Draft>(() => editing ? draftFromEditing(editing, date) : emptyDraft(date))
   const update = (patch: Partial<Draft>) => setDraft(prev => ({ ...prev, ...patch }))
 
+  // 就地新增二級：是否展開輸入、輸入值
+  const [addingSub, setAddingSub] = useState(false)
+  const [newSubName, setNewSubName] = useState('')
+
   const categories = getCategories().filter(c => c.type === draft.type && c.enabled)
   const selectedCat = categories.find(c => c.id === draft.categoryId)
   const subOptions = selectedCat?.subs ?? []
@@ -52,12 +57,28 @@ export function TransactionSheet({ date, editing, onClose, onSaved }: {
   const switchType = (type: 'income' | 'expense') => {
     if (type === draft.type) return
     update({ type, categoryId: '', subId: null })
+    setAddingSub(false)
+    setNewSubName('')
   }
 
-  // 選定一級類別 — 二級自動帶入該類別的有效預設（dangling 視為無）
+  // 選定一級 — 二級帶入「上次在這個一級用的二級」（無記憶則退回 defaultSubId）
   const pickCategory = (catId: string) => {
     const cat = categories.find(c => c.id === catId)
-    update({ categoryId: catId, subId: resolveDefaultSub(cat) })
+    update({ categoryId: catId, subId: pickInitialSub(cat, getLastSub(catId)) })
+    setAddingSub(false)
+    setNewSubName('')
+  }
+
+  // 就地新增二級：寫回類別（localStorage + 標 dirty，下次 syncAll 推 _config）並自動選取
+  const confirmAddSub = () => {
+    const name = newSubName.trim()
+    if (!name || !selectedCat) return
+    const updated = addSub(selectedCat, name)
+    saveCategories(getCategories().map(c => (c.id === updated.id ? updated : c)))
+    const created = updated.subs![updated.subs!.length - 1] // addSub 把新 sub 放在末端
+    update({ subId: created.id })
+    setNewSubName('')
+    setAddingSub(false)
   }
 
   const buildInput = () => ({
@@ -73,6 +94,7 @@ export function TransactionSheet({ date, editing, onClose, onSaved }: {
     if (!canSave) return
     if (isNew) {
       await addTransaction(buildInput())
+      rememberLastSub(draft.categoryId, draft.subId) // 記住這個一級這次用的二級
       if (continueAfter) {
         update({ amount: 0, note: '' }) // 保留 type/category/sub/date，只清金額與備註
       } else {
@@ -80,6 +102,7 @@ export function TransactionSheet({ date, editing, onClose, onSaved }: {
       }
     } else {
       await updateTransaction(editing!.localId!, buildInput())
+      rememberLastSub(draft.categoryId, draft.subId)
       onSaved()
     }
   }
@@ -179,8 +202,8 @@ export function TransactionSheet({ date, editing, onClose, onSaved }: {
             </div>
           </div>
 
-          {/* 二級 chips — 僅當選定類別有 subs 才顯示 */}
-          {subOptions.length > 0 && (
+          {/* 二級分類 — 選了一級即顯示（含「無」、既有二級、就地新增） */}
+          {draft.categoryId !== '' && (
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8 }}>二級分類</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -202,7 +225,62 @@ export function TransactionSheet({ date, editing, onClose, onSaved }: {
                     </button>
                   )
                 })}
+                {/* ＋新增二級 chip */}
+                {!addingSub && (
+                  <button
+                    aria-label="新增二級"
+                    onClick={() => setAddingSub(true)}
+                    style={{
+                      padding: '8px 14px', borderRadius: 999, border: `1.5px dashed ${T.hairline}`,
+                      background: 'transparent', color: T.ink2, cursor: 'pointer',
+                      fontFamily: T.font.sans, fontSize: 13, fontWeight: 700,
+                      display: 'flex', alignItems: 'center', gap: 4,
+                    }}
+                  >
+                    <Icon name="plus" size={13} stroke={2.6} /> 新增二級
+                  </button>
+                )}
               </div>
+
+              {/* 就地新增輸入 */}
+              {addingSub && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <input
+                    value={newSubName}
+                    onChange={e => setNewSubName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') confirmAddSub() }}
+                    placeholder="新二級名稱"
+                    aria-label="新二級名稱"
+                    autoFocus
+                    style={{
+                      flex: 1, padding: '10px 12px', borderRadius: T.r.sm,
+                      border: `1.5px solid ${T.hairline}`, fontSize: 14, fontWeight: 600,
+                      color: T.ink, background: T.bg, outline: 'none', fontFamily: T.font.sans,
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  <button
+                    onClick={confirmAddSub}
+                    disabled={!newSubName.trim()}
+                    aria-label="確認新增二級"
+                    style={{
+                      padding: '0 16px', borderRadius: T.r.sm, border: 'none',
+                      background: newSubName.trim() ? T.ink : '#D8D9E0', color: '#fff',
+                      fontSize: 13, fontWeight: 800, cursor: newSubName.trim() ? 'pointer' : 'default',
+                      fontFamily: T.font.sans,
+                    }}
+                  >加入</button>
+                  <button
+                    onClick={() => { setAddingSub(false); setNewSubName('') }}
+                    aria-label="取消新增二級"
+                    style={{
+                      padding: '0 12px', borderRadius: T.r.sm, border: 'none',
+                      background: T.bg, color: T.muted, fontSize: 13, fontWeight: 700,
+                      cursor: 'pointer', fontFamily: T.font.sans,
+                    }}
+                  >取消</button>
+                </div>
+              )}
             </div>
           )}
 
