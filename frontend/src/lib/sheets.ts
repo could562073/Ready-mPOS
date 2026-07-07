@@ -176,7 +176,10 @@ export const clearSpreadsheet = (): void => {
   localStorage.removeItem(LS_SHEET_NAME)
 }
 
-// 檢查已儲存的試算表 ID 是否仍有效，無效則清除
+// 檢查已儲存的試算表 ID 是否仍有效，「確定失效」才清除指標。
+// 🔴 只在「確定不存在」時清除：404（已永久刪除）或 trashed=true（在垃圾桶）。
+//    其他情況（5xx／429／網路／401／403 權限）視為暫時性，保留指標稍後重試，
+//    避免因一時錯誤誤清指標後被重新解析成另一張（甚至新建的空）試算表 → 資料看似消失。
 export async function clearIfInvalidSpreadsheet(): Promise<void> {
   const id = getSpreadsheetId()
   if (!id) return
@@ -186,11 +189,12 @@ export async function clearIfInvalidSpreadsheet(): Promise<void> {
       `https://www.googleapis.com/drive/v3/files/${id}?fields=id,trashed`,
       { headers: { Authorization: `Bearer ${token}` } },
     )
-    if (!res.ok) { clearSpreadsheet(); return }
+    if (res.status === 404) { clearSpreadsheet(); return } // 確定已刪除
+    if (!res.ok) return                                    // 暫時性/權限錯誤 → 保留指標
     const data = (await res.json()) as { id: string; trashed: boolean }
-    if (data.trashed) clearSpreadsheet()
+    if (data.trashed) clearSpreadsheet()                   // 在垃圾桶 → 視為無效
   } catch {
-    // token 取得失敗時保留 ID，讓後續流程繼續決定
+    // token 取得或網路失敗 → 保留 ID，讓後續流程繼續決定
   }
 }
 

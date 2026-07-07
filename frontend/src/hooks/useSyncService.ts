@@ -28,6 +28,25 @@ import type { Category } from '../types'
 //    🔴 併 main 前務必改回 'Ready-mPOS 記帳'（見 LOOP_STATE guardrail 9c / cutover）。
 const AUTO_SHEET_NAME = 'Ready-mPOS 記帳（逐筆交易測試）'
 
+// 確保 localStorage 的試算表指標仍有效（未被移到垃圾桶／刪除）；無效則清除並重新解析。
+// 🔴 修正：返回使用者若手動把試算表丟垃圾桶或刪除，舊指標會讓每次同步讀到垃圾桶舊資料
+//    或直接 404 卡住（clearIfInvalidSpreadsheet 原本只在登入時跑）。回傳有效試算表 id，取不到則回 ''。
+async function ensureValidSpreadsheet(): Promise<string> {
+  await clearIfInvalidSpreadsheet()        // 垃圾桶/刪除 → 清指標；暫時性錯誤 → 保留（見 sheets.ts）
+  const existing = getSpreadsheetId()
+  if (existing) return existing            // 仍有效
+  // 指標已被清 → 重新解析（findSpreadsheetByName 只找未刪除的同名表，找不到才新建）
+  try {
+    const currentMonth = new Date().toISOString().slice(0, 7)
+    const id = await getOrCreateSpreadsheet(AUTO_SHEET_NAME, currentMonth)
+    setSpreadsheetId(id, AUTO_SHEET_NAME)
+    return id
+  } catch (err) {
+    console.error('[sync] 重新解析試算表失敗：', err)
+    return ''
+  }
+}
+
 export function useSyncService() {
   const [syncing, setSyncing]         = useState(false)
   const [googleEmail, setGoogleEmail] = useState<string | null>(() => getSignedInEmail())
@@ -89,17 +108,23 @@ export function useSyncService() {
   }, [])
 
   const syncAll = useCallback(async () => {
-    const sheetId = getSpreadsheetId()
     // 診斷：確認 syncAll 是否被呼叫，以及若提前返回是卡在哪個條件（返回使用者遷移未觸發時用）
-    console.log(`[sync-diag] syncAll() 被呼叫｜locked=${lockRef.current} online=${navigator.onLine} sheetId=${sheetId ? '有' : '無'} email=${getSignedInEmail() ? '有' : '無'}`)
-    if (lockRef.current || !navigator.onLine || !sheetId || !getSignedInEmail()) return
+    // sheetId 有效性延到取得 token 後、於 ensureValidSpreadsheet 檢查（垃圾桶/刪除自我修復），此處不再擋
+    console.log(`[sync-diag] syncAll() 被呼叫｜locked=${lockRef.current} online=${navigator.onLine} email=${getSignedInEmail() ? '有' : '無'}`)
+    if (lockRef.current || !navigator.onLine || !getSignedInEmail()) return
     lockRef.current = true
     setSyncing(true)
 
-    // ⚠️ 暫時同步診斷 log（verify 分支彩排用，併 main 前整段移除）——前綴 [sync-diag] 方便 Console 過濾
-    console.log(`[sync-diag] syncAll 開始，sheetId=${sheetId}`)
-
     try {
+      // 🔴 自我修復：確認試算表指標仍有效（未被移到垃圾桶／刪除），無效則清除並重新解析（可能得到新 id）
+      const sheetId = await ensureValidSpreadsheet()
+      if (!sheetId) {
+        console.log('[sync-diag] 無有效試算表可同步，略過（可能重新解析失敗）')
+        return
+      }
+      // ⚠️ 暫時同步診斷 log（verify 分支彩排用，併 main 前整段移除）——前綴 [sync-diag] 方便 Console 過濾
+      console.log(`[sync-diag] syncAll 開始，sheetId=${sheetId}`)
+
       // 若本機類別有未同步的修改，先推送雲端，再拉取
       // 避免「先拉取舊雲端 → 覆蓋本機編輯」的競態，並確保後續記錄推送使用正確的欄位
       if (isCategoriesDirty()) {
