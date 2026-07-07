@@ -61,7 +61,12 @@ export function useSyncService() {
     const init = () => {
       initGoogleAuth()
       if (getSignedInEmail()) {
-        warmToken().catch(() => {})
+        // 🔴 初次同步必須等 token 就緒後才觸發（見下方 syncAll-on-mount 已移除即時呼叫）：
+        //    冷啟動時若持久化 token 已過期，tokenInfo=null 且 GIS(tokenClient) 尚未初始化，
+        //    acquireToken 會直接 reject → pull 拋錯 → 遷移被 try/catch 靜默吞掉且不重試。
+        //    改為 warmToken()（確保拿到有效 token，必要時靜默刷新）成功後才 syncAll，
+        //    讓「本來就登入」的返回使用者也能可靠偵測並執行新舊資料轉換。
+        warmToken().then(() => syncAll()).catch(() => {})
         // 每 50 分鐘靜默刷新（token 壽命 60 分鐘，提前更新避免過期觸發 popup）
         refreshTimer = setInterval(() => {
           if (getSignedInEmail()) warmToken().catch(() => {})
@@ -85,6 +90,8 @@ export function useSyncService() {
 
   const syncAll = useCallback(async () => {
     const sheetId = getSpreadsheetId()
+    // 診斷：確認 syncAll 是否被呼叫，以及若提前返回是卡在哪個條件（返回使用者遷移未觸發時用）
+    console.log(`[sync-diag] syncAll() 被呼叫｜locked=${lockRef.current} online=${navigator.onLine} sheetId=${sheetId ? '有' : '無'} email=${getSignedInEmail() ? '有' : '無'}`)
     if (lockRef.current || !navigator.onLine || !sheetId || !getSignedInEmail()) return
     lockRef.current = true
     setSyncing(true)
@@ -261,8 +268,9 @@ export function useSyncService() {
   }, [syncAll])
 
   useEffect(() => {
+    // 初次同步改由上方 init() 的 warmToken().then(syncAll) 觸發（token 就緒後才同步，避免冷啟動靜默失敗）；
+    // 這裡只保留「恢復連線」時重新同步（此時 GIS 已初始化、token 多半有效）。
     window.addEventListener('online', syncAll)
-    syncAll()
     return () => window.removeEventListener('online', syncAll)
   }, [syncAll])
 
