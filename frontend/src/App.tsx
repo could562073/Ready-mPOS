@@ -55,6 +55,7 @@ function App() {
     syncing, syncAll, syncCategories,
     googleEmail, signIn, signOut, signInError, creating,
     restoring, restoreFromSheets,
+    migrating, migrateMsg,
     clearLocalData,
     isConfigured, setCustomSheet,
   } = useSyncService()
@@ -217,6 +218,65 @@ function App() {
           )
         })}
       </nav>
+
+      {/* 🔴 新舊資料轉換阻擋層：cutover 遷移期間全螢幕遮罩，防止使用者操作干擾備份／改寫中的資料。
+          蓋過 nav 與 FAB（z-index 最高），使用者無法點記帳，只能等待；完成後自動消失（一般同步不觸發）。 */}
+      {migrating && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(26,27,37,0.72)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 32,
+            textAlign: 'center',
+          }}
+        >
+          <div
+            style={{
+              background: T.card,
+              borderRadius: 24,
+              padding: '32px 28px',
+              maxWidth: 320,
+              width: '100%',
+              boxShadow: '0 12px 48px rgba(0,0,0,0.35)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 16,
+            }}
+          >
+            <div className="mpos-spin" style={{ display: 'flex', color: T.mint }}>
+              <Icon name="sync" size={40} stroke={2.4} />
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.ink }}>資料升級中</div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: T.muted, lineHeight: 1.6 }}>
+              正在把您的舊帳目轉換成新格式，<br />
+              請勿關閉或操作 App，完成後會自動回到畫面。
+            </div>
+            {migrateMsg && (
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: T.mintInk,
+                  background: T.mintSoft,
+                  padding: '6px 14px',
+                  borderRadius: 999,
+                }}
+              >
+                {migrateMsg}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

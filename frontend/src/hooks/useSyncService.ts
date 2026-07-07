@@ -34,6 +34,10 @@ export function useSyncService() {
   const [signInError, setSignInError] = useState<string | null>(null)
   const [creating, setCreating]       = useState(false)
   const [restoring, setRestoring]     = useState(false)
+  // 新舊資料轉換（cutover 遷移）專用：偵測到雲端舊格式月份時 true，用來全螢幕阻擋 UI，
+  // 避免使用者在備份／改寫舊帳目期間操作而污染同步中的資料（一般同步不設此旗標）。
+  const [migrating, setMigrating]     = useState(false)
+  const [migrateMsg, setMigrateMsg]   = useState('')
   const lockRef = useRef(false)
 
   // GIS script 非同步載入，輪詢直到 google.accounts 可用
@@ -121,6 +125,13 @@ export function useSyncService() {
       const oldSet = new Set(oldFormatMonths)
       const pendingMonths = new Set(pendingTx.map(t => t.date.slice(0, 7)))
 
+      // 舊格式月份存在＝這次同步含「新舊資料轉換」（cutover 遷移，重大改動）→ 全螢幕阻擋 UI 直到完成
+      const isMigration = oldSet.size > 0
+      if (isMigration) {
+        setMigrating(true)
+        setMigrateMsg('備份舊資料中…')
+      }
+
       // 🔴 改寫舊格式分頁前必須先成功備份（真實資料保護，guardrail 9b）；
       //    備份失敗則本輪不改寫舊格式分頁，但仍推送本機 PENDING 所在（新格式或不存在）的月份
       let allowOldRewrite = true
@@ -144,7 +155,10 @@ export function useSyncService() {
       if (allowOldRewrite) for (const m of oldSet) monthsToRewrite.add(m)
       console.log(`[sync-diag] 本機 PENDING=${pendingTx.length} 筆，需改寫月份=[${[...monthsToRewrite].join(', ') || '無'}]`)
 
+      let rewriteIdx = 0
       for (const month of monthsToRewrite) {
+        // 轉換進度回饋（僅遷移時顯示於阻擋層）：轉換第 N/總 個月
+        if (isMigration) setMigrateMsg(`轉換新格式中…（${++rewriteIdx}/${monthsToRewrite.size}）`)
         const monthTx = await db.transactions.filter(t => t.date.startsWith(month)).sortBy('date')
         console.log(`[sync-diag] 改寫 ${month}：${monthTx.length} 筆 → 新格式寫回 Sheets`)
         await syncMonthTransactionsToSheets(sheetId, month, monthTx, categories)
@@ -161,6 +175,9 @@ export function useSyncService() {
     } finally {
       lockRef.current = false
       setSyncing(false)
+      // 無論成功或中斷都解除阻擋層（遷移失敗會於下次同步重試，資料不動）
+      setMigrating(false)
+      setMigrateMsg('')
     }
   }, [])
 
@@ -259,6 +276,8 @@ export function useSyncService() {
     signInError,
     creating,
     restoring,
+    migrating,
+    migrateMsg,
     restoreFromSheets,
     clearLocalData,
     isConfigured: isGoogleConfigured(),
