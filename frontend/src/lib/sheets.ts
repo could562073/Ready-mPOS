@@ -11,9 +11,8 @@ const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/userinfo.email',
   // Drive metadata 僅用於搜尋同名試算表，確保跨裝置使用同一份檔案
+  // 依名稱搜尋 / 檢查垃圾桶：唯讀 metadata 即足夠（findSpreadsheetByName、clearIfInvalidSpreadsheet）
   'https://www.googleapis.com/auth/drive.metadata.readonly',
-  // 備份需寫入權限；試算表由本 app 建立，drive.file 即涵蓋（不需存取使用者其他檔案）
-  'https://www.googleapis.com/auth/drive.file',
 ].join(' ')
 
 const LS_EMAIL      = 'gsheets_email'
@@ -455,21 +454,53 @@ export async function pullAllFromSheets(spreadsheetId: string, categories: Categ
   return records
 }
 
-// 舊→新格式改寫前的安全備份：整份試算表複製一份（時間戳命名），回傳備份檔 id
+// 舊→新格式改寫前的安全備份：把整份試算表的資料複製到一張「新建、由本 app 建立」的備份表。
+// 🔴 為何不用 Drive files.copy（曾用 drive.file scope，已移除）：drive.file 只能操作「本 app 建立」的檔案，
+//    對使用者手動建立/複製、或在 app 取得 drive.file 之前就已存在的試算表（含正式站舊表），
+//    files.copy 會回 403 appNotAuthorizedToFile。改用 spreadsheets scope（可讀寫使用者所有試算表）
+//    逐分頁讀值 → 寫進一張新建備份表：不依賴逐檔 Drive 授權，彩排（複製表）與真實 cutover（舊正式表）皆可用。
+//    僅備份「數值」（本 app 資料無格式需求），回傳備份表 id。
 export async function backupSpreadsheet(spreadsheetId: string): Promise<string> {
   const token = await acquireToken()
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}/copy`, {
+
+  // 1. 讀來源所有分頁的值（逐分頁 values 讀，避免 includeGridData 過重；空分頁容錯為 []）
+  const titles = await getSheetTitles(spreadsheetId, token)
+  const tabs: { title: string; values: unknown[][] }[] = []
+  for (const title of titles) {
+    const data = await sheetsGet<{ values?: unknown[][] }>(
+      `/${spreadsheetId}/values/${encodeURIComponent(title + '!A1:ZZ')}`,
+      token,
+    )
+    tabs.push({ title, values: data.values ?? [] })
+  }
+
+  // 2. 建立新的備份試算表（Sheets API 建表由 spreadsheets scope 涵蓋）；一次帶齊所有來源分頁名
+  const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: `Ready-mPOS 備份 ${stamp}` }),
+    body: JSON.stringify({
+      properties: { title: `Ready-mPOS 備份 ${stamp}` },
+      sheets: titles.map(t => ({ properties: { title: t } })),
+    }),
   })
-  if (!res.ok) {
-    const msg = await res.text().catch(() => '')
-    throw new Error(`備份試算表失敗：${res.status} ${msg}`)
+  if (!createRes.ok) {
+    const msg = await createRes.text().catch(() => '')
+    throw new Error(`建立備份試算表失敗：${createRes.status} ${msg}`)
   }
-  const data = (await res.json()) as { id: string }
-  return data.id
+  const { spreadsheetId: backupId } = (await createRes.json()) as { spreadsheetId: string }
+
+  // 3. 把每個分頁的值寫進備份表（RAW 保留原字串，例如交易 id / 前導零，不被自動解析）
+  for (const tab of tabs) {
+    if (tab.values.length === 0) continue
+    await sheetsPut(
+      `/${backupId}/values/${encodeURIComponent(tab.title + '!A1')}?valueInputOption=RAW`,
+      { values: tab.values },
+      token,
+    )
+  }
+
+  return backupId
 }
 
 // 讀所有月份分頁 → 交易 seeds；同時回報哪些分頁仍是舊格式（需改寫）
