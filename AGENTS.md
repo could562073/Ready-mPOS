@@ -1,7 +1,8 @@
 # AGENTS.md - Ready-mPOS
 
-> **Documentation Version**: 1.7
-> **Last Updated**: 2026-07-06
+> **Documentation Version**: 1.8
+> **Last Updated**: 2026-07-07
+> **App Version**: 2.0.0-beta.1（見下方「版本號規則」）
 > **Project**: Ready-mPOS
 > **Description**: 店家記帳系統 — 給餐廳/咖啡廳老闆用的記帳 App，解決手寫記帳本的核心痛點
 > **Features**: Offline-first PWA, Google Sheets sync, dynamic categories, push notifications, GitHub Pages deployment
@@ -57,6 +58,22 @@ Before starting any task:
 - **Deployment**: ✅ GitHub Pages (自動 CI/CD on push to main)
 - **Backend**: ❌ Removed — 無後端伺服器，純前端架構
 - **第 2 次優化（Phase 1–7 全部完成）**: 逐筆交易改造 — **全部完成**（Task 6 cutover 重複修正含於 Phase 5）。Phase 1：`Transaction` 型別、Dexie v3 自動遷移、`explodeDailyRecord` 拆解純函式 + Vitest、交易 CRUD/hook。Phase 2：二級分類純函式 CRUD + `CategoryEditSheet` 管理 UI + E2E。Phase 3：二級經 Sheets `_config` 跨裝置同步（`serializeSubs`/`parseSubs`）+ 修 push/pull 資料流失 + feature 分支同步隔離到獨立測試試算表（🔴 併 main 前須改回正式名）。Phase 4：記帳改逐筆交易 — 「記帳」tab 換成 `LedgerPage`（單日列表 + 右下 FAB → `TransactionSheet` 記帳，選一級自動帶入 `defaultSubId`），寫入 `transactions` + Playwright E2E。Phase 5：逐筆交易雲端同步 — 月份分頁改為新格式（`日期|收支|一級|二級|金額|備註|id`，`lib/txSheets.ts` 純函式：`isNewTxFormat` 偵測、`txToRow`/`rowToTx`、`mergeTransactionsById` 以 id 去重對帳）；舊格式 pull 時就地 `explodeDailyRecord` 拆解並標記待改寫，改寫前必先 `backupSpreadsheet`（Drive 時間戳備份，`drive.file` scope，需重新授權），備份失敗則本輪跳過所有舊格式改寫；`syncAll`/`restoreFromSheets` 已切換讀寫 `db.transactions`。**Task 6（cutover 交易重複修正）**：`explodeDailyRecord` 改用決定性 id（`mpos:<date>:<type>:<categoryId>`），本機遷移與雲端 re-explode 對同一批歷史資料產生相同 id → `mergeTransactionsById` 正確去重，cutover 首次同步不再重複；此修正自動套用於新安裝及 v3 upgrade（只跑一次）。**Phase 6**：「帳目」頁改為**月曆 + 單日逐筆列表**（`lib/calendar.ts` 純函式 + `MonthCalendar` 元件，每格顯示當日淨額 = 收入−支出、不扣手續費），App **落地頁與導覽首項改為「帳目」** + Playwright E2E。**Phase 7**：Dashboard／月結改用 `transactions` 重算 —— 新增 `lib/aggregate.ts` 的 `buildDailyRecordsFromTx` adapter 把逐筆交易合成 `DailyRecord`，讓兩頁既有的 `dayIncome/dayExpense/calcFees/TrendChart/CategoryBars` 邏輯零改動重用；Dashboard/月結不再 import `useDailyRecord`/`useMonthlyRecords` + Playwright E2E 驗證「帳目新增一筆 → 首頁/月結皆反映」。cutover（改回正式試算表名、遷移真實資料）為使用者核准的硬停，本期未執行，分支仍用 `AUTO_SHEET_NAME` 測試名。分支 `feature/line-item-transactions-redesign`。設計 spec：`docs/superpowers/specs/2026-07-01-line-item-transactions-redesign-design.md`。
+
+---
+
+## 🔖 版本號規則 (Versioning)
+
+採 **SemVer**（`MAJOR.MINOR.PATCH`）。單一事實來源 = `frontend/package.json` 的 `version`，
+經 `vite.config.ts` 的 `define` 注入為全域常數 `__APP_VERSION__`（宣告於 `src/vite-env.d.ts`），
+設定頁底部顯示 `Ready-mPOS v{__APP_VERSION__}`。**改版本只改 `package.json` 一處**。
+
+- **MAJOR**：資料模型 / 架構破壞性變更（例：本次逐筆交易改造、Dexie schema 升版、Sheets 分頁格式改版）。
+- **MINOR**：向後相容的新功能（例：二級分類、月曆帳目頁、記帳 Sheet UX）。
+- **PATCH**：修正與小調整（bug fix、文案、樣式）。
+- **預發布**：cutover（改回正式試算表名、遷移真實資料、併 main）**之前**掛 `-beta.N` 尾碼表示尚未上正式資料。
+
+**目前 = `2.0.0-beta.1`**：逐筆交易是資料模型大改 → MAJOR 進位到 2；cutover 前為 beta。
+cutover 併 main 時轉正式 `2.0.0`，其後功能→bump MINOR、修正→bump PATCH。
 
 ---
 

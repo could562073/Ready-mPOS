@@ -522,7 +522,7 @@ export function SettingsPage({
       </div>
 
       <div style={{ textAlign: 'center', fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 8 }}>
-        Ready-mPOS v1.0 · MVP
+        Ready-mPOS v{__APP_VERSION__}
       </div>
     </div>
   )

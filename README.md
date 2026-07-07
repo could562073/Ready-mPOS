@@ -3,6 +3,8 @@
 給餐廳/咖啡廳老闆用的記帳 App，解決手寫記帳本的核心痛點：每日帳目與月結對帳耗時且容易出錯。
 
 > **架構**：純前端 PWA，無後端伺服器。IndexedDB 離線儲存 + Google Sheets 雲端同步。
+>
+> **版本**：`2.0.0-beta.1`（SemVer；逐筆交易資料模型大改→MAJOR 2，cutover 前為 beta）。版本號單一事實來源＝`frontend/package.json`，設定頁底部顯示。
 
 ## Tech Stack
 
