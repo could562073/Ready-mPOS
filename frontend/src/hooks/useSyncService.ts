@@ -23,15 +23,32 @@ import { mergeTransactionsById } from '../lib/txSheets'
 import { getCategories, isCategoriesDirty, clearCategoriesDirty } from '../lib/categories'
 import type { Category } from '../types'
 
-// ⚠️ DEV-ONLY（feature/line-item-transactions-redesign 分支隔離）：
-//    開發期用獨立測試試算表，確保絕不碰正式站的「Ready-mPOS 記帳」。
-//    🔴 併 main 前務必改回 'Ready-mPOS 記帳'（見 LOOP_STATE guardrail 9c / cutover）。
-const AUTO_SHEET_NAME = 'Ready-mPOS 記帳（逐筆交易測試）'
+// 試算表名稱由 Vite build mode 注入，單一事實來源 = frontend/.env.*
+// （設計見 docs/superpowers/specs/2026-07-09-git-branch-workflow-design.md）：
+//   dev（npm run dev）／staging（npm run build:staging）→「Ready-mPOS 記帳（逐筆交易測試）」
+//   production（npm run build，CI on main 亦同）    →「Ready-mPOS 記帳」正式表
+// cutover 不再手改常數：併 main 後 production build 自動採用正式名。
+const AUTO_SHEET_NAME: string = import.meta.env.VITE_SHEET_NAME ?? ''
+
+// 🔴 防呆紅線：非 production build 只准連含「測試」字樣的表；表名為空（env 檔缺失）一律拒絕。
+//    任何環境設定錯誤都 fail-safe 成「不同步」，絕不讓開發／驗收環境碰到真實帳目。
+function assertSheetNameSafe(): boolean {
+  if (!AUTO_SHEET_NAME) {
+    console.error('[sync] VITE_SHEET_NAME 未設定（frontend/.env.development / .env.production 缺失），拒絕同步')
+    return false
+  }
+  if (import.meta.env.MODE !== 'production' && !AUTO_SHEET_NAME.includes('測試')) {
+    console.error(`[sync] 非 production build 禁止連正式表「${AUTO_SHEET_NAME}」，拒絕同步`)
+    return false
+  }
+  return true
+}
 
 // 確保 localStorage 的試算表指標仍有效（未被移到垃圾桶／刪除）；無效則清除並重新解析。
 // 🔴 修正：返回使用者若手動把試算表丟垃圾桶或刪除，舊指標會讓每次同步讀到垃圾桶舊資料
 //    或直接 404 卡住（clearIfInvalidSpreadsheet 原本只在登入時跑）。回傳有效試算表 id，取不到則回 ''。
 async function ensureValidSpreadsheet(): Promise<string> {
+  if (!assertSheetNameSafe()) return ''    // 環境設定錯誤 → 拒絕同步（防呆紅線）
   await clearIfInvalidSpreadsheet()        // 垃圾桶/刪除 → 清指標；暫時性錯誤 → 保留（見 sheets.ts）
   const existing = getSpreadsheetId()
   if (existing) return existing            // 仍有效
@@ -265,6 +282,10 @@ export function useSyncService() {
       await clearIfInvalidSpreadsheet()
 
       if (!getSpreadsheetId()) {
+        // 防呆紅線：環境設定錯誤時不建表、不同步，並把錯誤顯示在登入區
+        if (!assertSheetNameSafe()) {
+          throw new Error('試算表環境設定錯誤（VITE_SHEET_NAME），已拒絕同步以保護資料')
+        }
         setCreating(true)
         const currentMonth = new Date().toISOString().slice(0, 7)
         const id = await getOrCreateSpreadsheet(AUTO_SHEET_NAME, currentMonth)

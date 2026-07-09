@@ -1,7 +1,7 @@
 # CLAUDE.md - Ready-mPOS
 
-> **Documentation Version**: 1.8
-> **Last Updated**: 2026-07-07
+> **Documentation Version**: 1.9
+> **Last Updated**: 2026-07-09
 > **App Version**: 2.0.0-beta.1（見下方「版本號規則」）
 > **Project**: Ready-mPOS
 > **Description**: 店家記帳系統 — 給餐廳/咖啡廳老闆用的記帳 App，解決手寫記帳本的核心痛點
@@ -57,7 +57,7 @@ Before starting any task:
 - **Push Notifications**: ✅ Complete — Service Worker + Web Push，自訂提醒時間
 - **Deployment**: ✅ GitHub Pages (自動 CI/CD on push to main)
 - **Backend**: ❌ Removed — 無後端伺服器，純前端架構
-- **第 2 次優化（Phase 1–7 全部完成）**: 逐筆交易改造 — **全部完成**（Task 6 cutover 重複修正含於 Phase 5）。Phase 1：`Transaction` 型別、Dexie v3 自動遷移、`explodeDailyRecord` 拆解純函式 + Vitest、交易 CRUD/hook。Phase 2：二級分類純函式 CRUD + `CategoryEditSheet` 管理 UI + E2E。Phase 3：二級經 Sheets `_config` 跨裝置同步（`serializeSubs`/`parseSubs`）+ 修 push/pull 資料流失 + feature 分支同步隔離到獨立測試試算表（🔴 併 main 前須改回正式名）。Phase 4：記帳改逐筆交易 — 「記帳」tab 換成 `LedgerPage`（單日列表 + 右下 FAB → `TransactionSheet` 記帳，選一級自動帶入 `defaultSubId`），寫入 `transactions` + Playwright E2E。Phase 5：逐筆交易雲端同步 — 月份分頁改為新格式（`日期|收支|一級|二級|金額|備註|id`，`lib/txSheets.ts` 純函式：`isNewTxFormat` 偵測、`txToRow`/`rowToTx`、`mergeTransactionsById` 以 id 去重對帳）；舊格式 pull 時就地 `explodeDailyRecord` 拆解並標記待改寫，改寫前必先 `backupSpreadsheet`（Drive 時間戳備份，`drive.file` scope，需重新授權），備份失敗則本輪跳過所有舊格式改寫；`syncAll`/`restoreFromSheets` 已切換讀寫 `db.transactions`。**Task 6（cutover 交易重複修正）**：`explodeDailyRecord` 改用決定性 id（`mpos:<date>:<type>:<categoryId>`），本機遷移與雲端 re-explode 對同一批歷史資料產生相同 id → `mergeTransactionsById` 正確去重，cutover 首次同步不再重複；此修正自動套用於新安裝及 v3 upgrade（只跑一次）。**Phase 6**：「帳目」頁改為**月曆 + 單日逐筆列表**（`lib/calendar.ts` 純函式 + `MonthCalendar` 元件，每格顯示當日淨額 = 收入−支出、不扣手續費），App **落地頁與導覽首項改為「帳目」** + Playwright E2E。**Phase 7**：Dashboard／月結改用 `transactions` 重算 —— 新增 `lib/aggregate.ts` 的 `buildDailyRecordsFromTx` adapter 把逐筆交易合成 `DailyRecord`，讓兩頁既有的 `dayIncome/dayExpense/calcFees/TrendChart/CategoryBars` 邏輯零改動重用；Dashboard/月結不再 import `useDailyRecord`/`useMonthlyRecords` + Playwright E2E 驗證「帳目新增一筆 → 首頁/月結皆反映」。cutover（改回正式試算表名、遷移真實資料）為使用者核准的硬停，本期未執行，分支仍用 `AUTO_SHEET_NAME` 測試名。分支 `feature/line-item-transactions-redesign`。設計 spec：`docs/superpowers/specs/2026-07-01-line-item-transactions-redesign-design.md`。
+- **第 2 次優化（Phase 1–7 全部完成）**: 逐筆交易改造 — **全部完成**（Task 6 cutover 重複修正含於 Phase 5）。Phase 1：`Transaction` 型別、Dexie v3 自動遷移、`explodeDailyRecord` 拆解純函式 + Vitest、交易 CRUD/hook。Phase 2：二級分類純函式 CRUD + `CategoryEditSheet` 管理 UI + E2E。Phase 3：二級經 Sheets `_config` 跨裝置同步（`serializeSubs`/`parseSubs`）+ 修 push/pull 資料流失 + feature 分支同步隔離到獨立測試試算表（原為手改常數，2026-07-09 起已 env 化，見「Git 分支流程」）。Phase 4：記帳改逐筆交易 — 「記帳」tab 換成 `LedgerPage`（單日列表 + 右下 FAB → `TransactionSheet` 記帳，選一級自動帶入 `defaultSubId`），寫入 `transactions` + Playwright E2E。Phase 5：逐筆交易雲端同步 — 月份分頁改為新格式（`日期|收支|一級|二級|金額|備註|id`，`lib/txSheets.ts` 純函式：`isNewTxFormat` 偵測、`txToRow`/`rowToTx`、`mergeTransactionsById` 以 id 去重對帳）；舊格式 pull 時就地 `explodeDailyRecord` 拆解並標記待改寫，改寫前必先 `backupSpreadsheet`（Sheets API 逐分頁匯出到新建時間戳備份表；原 Drive `files.copy`+`drive.file` 因 403 已棄用），備份失敗則本輪跳過所有舊格式改寫；`syncAll`/`restoreFromSheets` 已切換讀寫 `db.transactions`。**Task 6（cutover 交易重複修正）**：`explodeDailyRecord` 改用決定性 id（`mpos:<date>:<type>:<categoryId>`），本機遷移與雲端 re-explode 對同一批歷史資料產生相同 id → `mergeTransactionsById` 正確去重，cutover 首次同步不再重複；此修正自動套用於新安裝及 v3 upgrade（只跑一次）。**Phase 6**：「帳目」頁改為**月曆 + 單日逐筆列表**（`lib/calendar.ts` 純函式 + `MonthCalendar` 元件，每格顯示當日淨額 = 收入−支出、不扣手續費），App **落地頁與導覽首項改為「帳目」** + Playwright E2E。**Phase 7**：Dashboard／月結改用 `transactions` 重算 —— 新增 `lib/aggregate.ts` 的 `buildDailyRecordsFromTx` adapter 把逐筆交易合成 `DailyRecord`，讓兩頁既有的 `dayIncome/dayExpense/calcFees/TrendChart/CategoryBars` 邏輯零改動重用；Dashboard/月結不再 import `useDailyRecord`/`useMonthlyRecords` + Playwright E2E 驗證「帳目新增一筆 → 首頁/月結皆反映」。cutover（切換正式試算表、遷移真實資料）為使用者核准的硬停，本期未執行；表名已 env 化（dev/staging=測試表、production=正式表，見「Git 分支流程」）。分支 `feature/line-item-transactions-redesign`。設計 spec：`docs/superpowers/specs/2026-07-01-line-item-transactions-redesign-design.md`。
 
 ---
 
@@ -74,6 +74,28 @@ Before starting any task:
 
 **目前 = `2.0.0-beta.1`**：逐筆交易是資料模型大改 → MAJOR 進位到 2；cutover 前為 beta。
 cutover 併 main 時轉正式 `2.0.0`，其後功能→bump MINOR、修正→bump PATCH。
+
+---
+
+## 🔀 Git 分支流程 (Branch Workflow)
+
+輕量 GitHub Flow（個人開發）。完整設計見 `docs/superpowers/specs/2026-07-09-git-branch-workflow-design.md`。
+
+| 分支 | 角色 | 規則 |
+|---|---|---|
+| `main` | **正式**（= production） | push 即自動部署 GitHub Pages；只接受驗收完成的合併，每次合併打 tag `vX.Y.Z` |
+| `feature/*` `fix/*` | 開發 | 從 main 切出，短命，合併後刪除 |
+| `verify/*` | 預發驗收（可選） | 驗收裝置拉此分支本機跑，開發端可繼續動 feature 分支 |
+
+**測試 vs 正式試算表由 Vite env 控制**（不再手改常數）：`useSyncService.ts` 讀
+`import.meta.env.VITE_SHEET_NAME`，值來自已提交的 env 檔——
+
+- `.env.development`（`npm run dev`）／`.env.staging`（`npm run build:staging`）→ 測試表 `Ready-mPOS 記帳（逐筆交易測試）`
+- `.env.production`（`npm run build`，CI 亦同）→ 正式表 `Ready-mPOS 記帳`
+
+🔴 **防呆紅線**（`assertSheetNameSafe`）：非 production build 的表名必須含「測試」字樣、表名為空一律拒絕同步——環境設定錯誤 fail-safe 成「不同步」，開發／驗收環境絕不碰真實帳目。
+
+**新 feature SOP**：main 切 `feature/x` → 開發（tsc/vitest/build 綠）→ `npm run dev` 本機驗收（自動連測試表）→（可選）推 `verify/x` 真機驗收 → bump 版本（MINOR/PATCH/MAJOR）→ 併 main（`--no-ff`）+ tag + push → 刪分支。**Hotfix** 同構：`fix/x` → 驗證 → bump PATCH → 併 main + tag。
 
 ---
 
@@ -161,10 +183,10 @@ Ready-mPOS/
 
 ### 逐筆交易雲端同步（第 2 次優化 Phase 5）
 - `lib/txSheets.ts`（純函式，Vitest 覆蓋）：`TX_MONTH_HEADERS` 固定 7 欄表頭 `日期|收支|一級類別|二級類別|金額|備註|id`（不隨類別增減變動）；`isNewTxFormat` 偵測月份分頁是否已是新格式；`txToRow`/`rowToTx` 單筆轉換；`mergeTransactionsById` 以 `Transaction.id` 去重合併（本機 `PENDING` 優先於雲端版本）。
-- `lib/sheets.ts`：`pullAllTransactionsFromSheets` 逐月偵測格式——新格式直接讀；舊彙總格式用抽出的純函式 `parseOldMonthRows` + `explodeDailyRecord` 就地拆成交易，並標記該月待改寫。`syncMonthTransactionsToSheets` 對新格式月份 `values:clear` + 整表覆蓋寫回。`backupSpreadsheet`（Drive `files.copy`）在改寫任何舊格式分頁前建立時間戳備份副本；`SCOPES` 新增 `drive.file`（既有登入使用者需重新授權）。
+- `lib/sheets.ts`：`pullAllTransactionsFromSheets` 逐月偵測格式——新格式直接讀；舊彙總格式用抽出的純函式 `parseOldMonthRows` + `explodeDailyRecord` 就地拆成交易，並標記該月待改寫。`syncMonthTransactionsToSheets` 對新格式月份 `values:clear` + 整表覆蓋寫回。`backupSpreadsheet` 在改寫任何舊格式分頁前建立時間戳備份：**Sheets API 匯出**（逐分頁讀值寫入新建備份表，走既有 `spreadsheets` scope）——原 Drive `files.copy` 方案因 `drive.file` scope 只授權 app 自建檔案、對既有表 403 `appNotAuthorizedToFile` 而棄用，`drive.file` 已自 `SCOPES` 移除。
 - **資料保護紅線**：舊格式分頁改寫前必先 `backupSpreadsheet` 成功；備份失敗則該輪同步**跳過所有舊格式分頁改寫**（即使該月同時有本機 `PENDING` 待寫也不改寫，等下次同步重試）。
 - `hooks/useSyncService.ts`：`syncAll`/`restoreFromSheets`/`clearLocalData` 已改讀寫 `db.transactions`（以 id 去重對帳，本機 `PENDING` 優先）。
-- ✅ **cutover 交易重複已解決（Task 6）**：`explodeDailyRecord` 現採決定性 id `mpos:<date>:<type>:<categoryId>`，本機 v3 upgrade 時產生的 id 與雲端 pull 時 re-explode 同一批舊資料產生的 id 完全相同，`mergeTransactionsById` 可正確辨識並去重，cutover 首次同步不再發生重複。此修正自動套用於新安裝及 v3 upgrade 過程（upgrade 僅執行一次）；在此修正前已於 dev 分支跑過舊版遷移的裝置，其本機交易仍為舊隨機 id，可使用 `restoreFromSheets`（覆蓋本機）或 `clearLocalData`（重置）重新同步。cutover（改回正式試算表名、對真實使用者資料執行遷移）為使用者核准的硬停，本期未執行，分支仍使用 `AUTO_SHEET_NAME` 測試試算表名。
+- ✅ **cutover 交易重複已解決（Task 6）**：`explodeDailyRecord` 現採決定性 id `mpos:<date>:<type>:<categoryId>`，本機 v3 upgrade 時產生的 id 與雲端 pull 時 re-explode 同一批舊資料產生的 id 完全相同，`mergeTransactionsById` 可正確辨識並去重，cutover 首次同步不再發生重複。此修正自動套用於新安裝及 v3 upgrade 過程（upgrade 僅執行一次）；在此修正前已於 dev 分支跑過舊版遷移的裝置，其本機交易仍為舊隨機 id，可使用 `restoreFromSheets`（覆蓋本機）或 `clearLocalData`（重置）重新同步。cutover（切換正式試算表、對真實使用者資料執行遷移）為使用者核准的硬停，本期未執行；表名已 env 化，dev/staging 自動連測試表、production build 自動連正式表（見「Git 分支流程」）。
 
 ### 帳目頁月曆 + 落地頁（第 2 次優化 Phase 6）
 - `lib/calendar.ts`（純函式，Vitest 覆蓋）：`buildMonthMatrix('YYYY-MM')` 產生週列陣列（每列 7 格、`'YYYY-MM-DD'` 或 `null` 補白、週日為每週第一天）；`monthDayNets(txs)` 算 date→當日淨額（`Σ收入 − Σ支出`，**不扣手續費**——Phase 7 已評估並刻意保留此差異，見下方 Phase 7 說明）；`shiftMonth(month, delta)` 跨年切月。
@@ -216,8 +238,11 @@ cd frontend && npm test
 # Type check
 cd frontend && npx tsc --noEmit
 
-# Build frontend
+# Build frontend（production mode → 正式試算表名）
 cd frontend && npm run build
+
+# Build for 本機驗收（staging mode → 測試試算表名）
+cd frontend && npm run build:staging
 ```
 
 ---

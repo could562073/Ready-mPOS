@@ -227,7 +227,7 @@ Ready-mPOS/
 **Phase 3 — Sheets `_config` 二級同步 + 隔離（✅ 完成）**
 - 二級經 `_config` 的 `subs`/`defaultSub` 兩欄跨裝置同步（`serializeSubs`/`parseSubs`，`id:encodeURIComponent(name)`、`|` 分隔，Vitest 覆蓋）
 - 修正 Phase 2 揪出的資料流失：push/pull lockstep 帶二級，push 在清 dirty **前**序列化；舊 7 欄 `_config` pull 容錯
-- 🔒 開發安全：feature 分支同步隔離到獨立測試試算表，開發期不碰正式站資料（併 main 前改回正式名）
+- 🔒 開發安全：feature 分支同步隔離到獨立測試試算表，開發期不碰正式站資料（原為手改常數，2026-07-09 起改由 Vite env 控制，見下方「Git 分支流程」）
 - ⚠️ 月份分頁新格式讀寫／舊格式偵測改寫／Drive 備份移至 Phase 5（與 UI 切換同期，才能端到端驗證）
 
 **Phase 4 — 逐筆交易記帳 UI（✅ 完成）**
@@ -239,7 +239,7 @@ Ready-mPOS/
 **Phase 5 — 逐筆交易雲端同步（✅ 完成）**
 - 月份分頁改為新格式：一列一筆交易 `日期|收支|一級類別|二級類別|金額|備註|id`，表頭固定不隨類別增減變動；`lib/txSheets.ts` 純函式（`isNewTxFormat`/`txToRow`/`rowToTx`/`mergeTransactionsById`）Vitest 覆蓋
 - `pullAllTransactionsFromSheets` 逐月偵測新舊格式：舊彙總格式用抽出的純函式 `parseOldMonthRows` + `explodeDailyRecord` 就地拆成交易並標記待改寫；`syncMonthTransactionsToSheets` 對新格式月份整表覆蓋寫回
-- `backupSpreadsheet`：改寫任何舊格式分頁前，先用 Drive `files.copy` 建立時間戳備份副本（`SCOPES` 新增 `drive.file`，既有使用者需重新授權）；🔒 備份失敗則本輪同步跳過所有舊格式改寫，即使該月同時有本機待同步交易也不動
+- `backupSpreadsheet`：改寫任何舊格式分頁前，先建立時間戳備份表——**Sheets API 匯出**（逐分頁讀值寫入新建備份表，走既有 `spreadsheets` scope；原 Drive `files.copy`+`drive.file` 方案對既有表 403 已棄用）；🔒 備份失敗則本輪同步跳過所有舊格式改寫，即使該月同時有本機待同步交易也不動
 - `useSyncService.ts` 的 `syncAll`/`restoreFromSheets`/`clearLocalData` 全面切換到 `db.transactions`，以 `Transaction.id` 去重對帳（本機 `PENDING` 優先）
 - ✅ cutover 交易重複已解決（Task 6）：`explodeDailyRecord` 改用決定性 id，本機遷移與雲端 re-explode 出的同批交易 id 相同，`mergeTransactionsById` 可正確去重，cutover 首次同步不再重複
 - ⚠️ Dashboard・月結當時仍讀 `DailyRecord`（含手續費後淨額），已於 Phase 7 改用交易重算
@@ -255,4 +255,22 @@ Ready-mPOS/
 - **刻意保留的定義差異**：月曆（Phase 6）每日淨額為**毛額**（收入−支出，不扣手續費），Dashboard Hero「今日淨額」為**扣手續費後**淨額——用途不同（月曆看全月概況、Hero 看當日實收），評估後不強行統一
 - Playwright E2E 覆蓋：帳目用 FAB 新增一筆今日收入 → 首頁今日淨額 Hero 反映該筆 → 月結本月總收入含該筆
 
-第 2 次優化（逐筆交易改造）至此 **Phase 1–7 全部完成**。cutover（併回 `main`、改用正式試算表名、對真實使用者資料執行遷移）為使用者核准的硬停，尚未執行，分支仍使用 `AUTO_SHEET_NAME` 測試試算表名。
+第 2 次優化（逐筆交易改造）至此 **Phase 1–7 全部完成**。cutover（併回 `main`、切換正式試算表、對真實使用者資料執行遷移）為使用者核准的硬停，尚未執行。
+
+## Git 分支流程
+
+輕量 GitHub Flow（個人開發），完整設計見 `docs/superpowers/specs/2026-07-09-git-branch-workflow-design.md`：
+
+- **`main` = 正式**：push 即自動部署 GitHub Pages，每次合併打 tag `vX.Y.Z`（SemVer）
+- **`feature/*` / `fix/*`**：短命開發分支，從 main 切出，驗收通過併回 main 後刪除
+- **`verify/*`**（可選）：預發驗收快照分支，供真機／跨裝置驗收
+
+**測試 vs 正式試算表由 Vite env 控制**（`VITE_SHEET_NAME`，不再手改常數）：
+
+| env 檔（已提交） | 指令 | 試算表 |
+|---|---|---|
+| `.env.development` | `npm run dev` | 測試表 `Ready-mPOS 記帳（逐筆交易測試）` |
+| `.env.staging` | `npm run build:staging` | 測試表（本機驗收 build 版用） |
+| `.env.production` | `npm run build`（CI 亦同） | 正式表 `Ready-mPOS 記帳` |
+
+🔴 防呆：非 production build 的表名必須含「測試」、表名為空一律拒絕同步——開發／驗收環境絕不碰真實帳目；cutover 併 main 後正式站自動採用正式表名，無需改程式碼。
