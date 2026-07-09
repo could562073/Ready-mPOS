@@ -86,4 +86,13 @@ describe('mergeTransactionsById', () => {
     expect(plan.toAdd).toEqual([])
     expect(plan.toUpdate).toEqual([])
   })
+  it('本機 DELETED 墓碑同 id → 不 toAdd 也不 toUpdate（防止雲端列復活）', () => {
+    const withTombstone: Transaction[] = [
+      ...local,
+      { localId: 3, id: 'd', date: '2026-07-02', type: 'expense', categoryId: 'c1', subId: null, amount: 40, syncStatus: 'DELETED', createdAt: 'x', updatedAt: 'x' },
+    ]
+    const plan = mergeTransactionsById(withTombstone, [seed('d', 40)])
+    expect(plan.toAdd).toEqual([])
+    expect(plan.toUpdate).toEqual([])
+  })
 })

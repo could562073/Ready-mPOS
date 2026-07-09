@@ -167,10 +167,10 @@ export function useSyncService() {
       if (plan.toAdd.length) await db.transactions.bulkAdd(plan.toAdd)
       for (const u of plan.toUpdate) await db.transactions.update(u.localId, u.seed)
 
-      // ── Push：本機 PENDING 交易 → Sheets（連同需改寫的舊格式月份一起重寫） ──
-      const pendingTx = await db.transactions.where('syncStatus').equals('PENDING').toArray()
+      // ── Push：本機 PENDING（新增/編輯）與 DELETED（軟刪墓碑）交易 → Sheets（整月重寫） ──
+      const pendingTx = await db.transactions.where('syncStatus').anyOf('PENDING', 'DELETED').toArray()
 
-      // 需要改寫的月份 = 舊格式月份 ∪ 有本機 PENDING 的月份
+      // 需要改寫的月份 = 舊格式月份 ∪ 有本機待同步變更（PENDING/DELETED）的月份
       const oldSet = new Set(oldFormatMonths)
       const pendingMonths = new Set(pendingTx.map(t => t.date.slice(0, 7)))
 
@@ -208,14 +208,22 @@ export function useSyncService() {
       for (const month of monthsToRewrite) {
         // 轉換進度回饋（僅遷移時顯示於阻擋層）：轉換第 N/總 個月
         if (isMigration) setMigrateMsg(`轉換新格式中…（${++rewriteIdx}/${monthsToRewrite.size}）`)
-        const monthTx = await db.transactions.filter(t => t.date.startsWith(month)).sortBy('date')
-        console.log(`[sync-diag] 改寫 ${month}：${monthTx.length} 筆 → 新格式寫回 Sheets`)
+        // 寫回內容排除 DELETED 墓碑 → 被刪的列從雲端分頁消失（整月 clear+覆蓋機制天然支援刪除）
+        const monthTx = await db.transactions
+          .filter(t => t.date.startsWith(month) && t.syncStatus !== 'DELETED')
+          .sortBy('date')
+        console.log(`[sync-diag] 改寫 ${month}：${monthTx.length} 筆（不含已刪）→ 新格式寫回 Sheets`)
         await syncMonthTransactionsToSheets(sheetId, month, monthTx, categories)
         await Promise.all(
           monthTx
             .filter(t => t.localId !== undefined)
             .map(t => db.transactions.update(t.localId!, { syncStatus: 'SYNCED' })),
         )
+        // 雲端已無這些列 → 該月墓碑功成身退，從本機真正清除
+        // （順序在寫回成功之後：若寫回失敗丟例外，墓碑保留，下次同步重試刪除）
+        await db.transactions
+          .filter(t => t.date.startsWith(month) && t.syncStatus === 'DELETED')
+          .delete()
       }
       console.log('[sync-diag] syncAll 完成 ✓')
     } catch (err) {

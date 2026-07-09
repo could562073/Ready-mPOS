@@ -13,6 +13,8 @@ export function useMonthTransactions(month: string) {
       db.transactions
         .where('date')
         .startsWith(`${month}-`)
+        // 軟刪除墓碑（DELETED）不出現在任何畫面（列表/月曆/首頁/月結皆吃本 hook）
+        .and(t => t.syncStatus !== 'DELETED')
         .sortBy('date'),
     [month],
   )
@@ -26,7 +28,8 @@ export function useMonthTransactions(month: string) {
 // 查詢單日所有交易
 export function useDayTransactions(date: string) {
   const result = useLiveQuery(
-    async () => db.transactions.where('date').equals(date).toArray(),
+    // 同上：過濾軟刪除墓碑
+    async () => db.transactions.where('date').equals(date).and(t => t.syncStatus !== 'DELETED').toArray(),
     [date],
   )
 

@@ -32,11 +32,12 @@ function emptyDraft(date: string): Draft {
   return { type: 'expense', categoryId: '', subId: null, amount: 0, note: '', d: date }
 }
 
-export function TransactionSheet({ date, editing, onClose, onSaved }: {
+export function TransactionSheet({ date, editing, onClose, onSaved, onSync }: {
   date: string                 // 新增時預設日期 'YYYY-MM-DD'
   editing: Transaction | null  // null=新增；非 null=編輯此筆
   onClose: () => void
   onSaved: () => void          // 儲存/刪除成功後通知
+  onSync?: () => void          // 每次成功寫入（新增/編輯/刪除）後觸發雲端同步（fire-and-forget）
 }) {
   const isNew = editing === null
   const [draft, setDraft] = useState<Draft>(() => editing ? draftFromEditing(editing, date) : emptyDraft(date))
@@ -95,6 +96,7 @@ export function TransactionSheet({ date, editing, onClose, onSaved }: {
     if (isNew) {
       await addTransaction(buildInput())
       rememberLastSub(draft.categoryId, draft.subId) // 記住這個一級這次用的二級
+      onSync?.()                      // 儲存後即時同步（含「儲存並繼續」的每一筆）
       if (continueAfter) {
         update({ amount: 0, note: '' }) // 保留 type/category/sub/date，只清金額與備註
       } else {
@@ -103,12 +105,17 @@ export function TransactionSheet({ date, editing, onClose, onSaved }: {
     } else {
       await updateTransaction(editing!.localId!, buildInput())
       rememberLastSub(draft.categoryId, draft.subId)
+      onSync?.()
       onSaved()
     }
   }
 
+  // 刪除採兩段式：先開確認視窗（confirmingDelete），使用者確認後才軟刪 + 觸發同步
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const remove = async () => {
-    await deleteTransaction(editing!.localId!)
+    await deleteTransaction(editing!.localId!)   // 軟刪除（DELETED 墓碑），同步時從雲端移除該列
+    setConfirmingDelete(false)
+    onSync?.()
     onSaved()
   }
 
@@ -346,7 +353,7 @@ export function TransactionSheet({ date, editing, onClose, onSaved }: {
         <div style={{ padding: '12px 20px 0', borderTop: `1px solid ${T.hairline}`, display: 'flex', gap: 10 }}>
           {!isNew && (
             <button
-              onClick={remove}
+              onClick={() => setConfirmingDelete(true)}
               aria-label="刪除交易"
               style={{
                 flex: 1, padding: '14px 0', borderRadius: T.r.md, border: 'none',
@@ -383,6 +390,55 @@ export function TransactionSheet({ date, editing, onClose, onSaved }: {
           >儲存</button>
         </div>
       </div>
+
+      {/* 刪除二次確認小視窗：蓋在 Sheet 之上，確認後才軟刪除並同步從雲端移除 */}
+      {confirmingDelete && (
+        <div
+          onClick={() => setConfirmingDelete(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 200,
+            background: 'rgba(26,27,37,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32,
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-label="確認刪除交易"
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: T.card, borderRadius: 20, padding: '24px 20px',
+              maxWidth: 300, width: '100%', textAlign: 'center',
+              boxShadow: '0 12px 48px rgba(0,0,0,0.3)',
+              display: 'flex', flexDirection: 'column', gap: 8,
+            }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>確定要刪除這筆交易嗎？</div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: T.muted, lineHeight: 1.6 }}>
+              刪除後會同步從雲端試算表移除，無法復原。
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              <button
+                onClick={() => setConfirmingDelete(false)}
+                aria-label="取消刪除"
+                style={{
+                  flex: 1, padding: '12px 0', borderRadius: T.r.md, border: 'none',
+                  background: T.bg, color: T.ink2,
+                  fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: T.font.sans,
+                }}
+              >取消</button>
+              <button
+                onClick={remove}
+                aria-label="確認刪除"
+                style={{
+                  flex: 1, padding: '12px 0', borderRadius: T.r.md, border: 'none',
+                  background: T.coral, color: '#fff',
+                  fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: T.font.sans,
+                }}
+              >刪除</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

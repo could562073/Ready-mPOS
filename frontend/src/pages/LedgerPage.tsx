@@ -12,6 +12,7 @@ import type { Transaction } from '../types'
 interface LedgerPageProps {
   date: string
   onDateChange: (date: string) => void
+  onSync?: () => void   // 交易寫入（新增/編輯/刪除）後觸發雲端同步（App 傳入 syncAll）
 }
 
 // 本地時區日期字串（比照 App.tsx toLocalDateString，避免 UTC 位移造成跨日錯誤）
@@ -43,7 +44,7 @@ const FALLBACK_COLOR = { bg: T.lavender, soft: T.lavenderSoft, ink: T.lavenderIn
 
 // 單日逐筆記帳列表頁 — 取代舊版 DailyEntryPage 的彙總表單，
 // 改為顯示 useDayTransactions 查到的逐筆交易，並以右下 FAB 開啟 TransactionSheet 新增/編輯。
-export function LedgerPage({ date, onDateChange }: LedgerPageProps) {
+export function LedgerPage({ date, onDateChange, onSync }: LedgerPageProps) {
   const { transactions, loading } = useDayTransactions(date)
   const cats = getCategories()
   // null=關閉；{editing:null}=新增；{editing:tx}=編輯該筆
@@ -208,6 +209,7 @@ export function LedgerPage({ date, onDateChange }: LedgerPageProps) {
           editing={sheet.editing}
           onClose={() => setSheet(null)}
           onSaved={() => setSheet(null)}
+          onSync={onSync}
         />
       )}
     </div>

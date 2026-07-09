@@ -108,10 +108,18 @@ test('LedgerPage：FAB 新增（二級預設帶入）／儲存並繼續／編輯
   await expect(txRow(page, '雜支', '150')).toBeVisible()
   await expect(txRow(page, '雜支', '100')).toHaveCount(0)
 
-  // 6. 編輯「現金 500」列 → 點「刪除」→ 該列消失
+  // 6. 編輯「現金 500」列 → 點「刪除」→ 確認視窗出現 → 「取消」不刪 → 再點「刪除」→ 「確認刪除」→ 該列消失
   await txRow(page, '現金', '500').click()
   await expect(page.getByText('編輯交易')).toBeVisible()
   await page.getByRole('button', { name: '刪除交易' }).click()
+  await expect(page.getByText('確定要刪除這筆交易嗎？')).toBeVisible()
+  // 取消 → 視窗關閉、交易仍在、編輯 Sheet 仍開
+  await page.getByRole('button', { name: '取消刪除' }).click()
+  await expect(page.getByText('確定要刪除這筆交易嗎？')).toBeHidden()
+  await expect(page.getByText('編輯交易')).toBeVisible()
+  // 再刪一次並確認 → Sheet 關閉、該列消失（軟刪除墓碑，查詢已過濾）
+  await page.getByRole('button', { name: '刪除交易' }).click()
+  await page.getByRole('button', { name: '確認刪除' }).click()
   await expect(page.getByText('編輯交易')).toBeHidden()
   await expect(txRow(page, '現金', '500')).toHaveCount(0)
 

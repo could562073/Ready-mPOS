@@ -28,7 +28,12 @@ export async function updateTransaction(localId: number, patch: Partial<TxInput>
   })
 }
 
-// 刪除一筆交易（依 Dexie 主鍵 localId）
+// 刪除一筆交易（依 Dexie 主鍵 localId）— 軟刪除：標記 DELETED 墓碑而非硬刪。
+// 硬刪會讓本機毫無痕跡：雲端該列不會被移除，且下次 pull 對帳時會被當成新資料「復活」加回來。
+// 墓碑由 syncAll 寫回 Sheets（排除該列）成功後才真正清除（見 useSyncService）。
 export async function deleteTransaction(localId: number): Promise<void> {
-  await db.transactions.delete(localId)
+  await db.transactions.update(localId, {
+    syncStatus: 'DELETED',
+    updatedAt: new Date().toISOString(),
+  })
 }

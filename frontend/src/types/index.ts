@@ -1,5 +1,7 @@
 // 同步狀態：PENDING = 本地未同步，SYNCED = 已同步雲端
-export type SyncStatus = 'PENDING' | 'SYNCED'
+// DELETED = 軟刪除墓碑：畫面查詢一律過濾、同步寫回 Sheets 時排除該列（雲端列消失）、
+// 寫回成功後才從本機真正清除。墓碑存在期間可防止 pull 把雲端同 id 列「復活」加回來。
+export type SyncStatus = 'PENDING' | 'SYNCED' | 'DELETED'
 
 // 類別型別：收入或支出，支援自訂圖示/顏色/手續費
 export interface Category {

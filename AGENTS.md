@@ -2,7 +2,7 @@
 
 > **Documentation Version**: 1.9
 > **Last Updated**: 2026-07-09
-> **App Version**: 2.0.0-beta.1（見下方「版本號規則」）
+> **App Version**: 2.0.0-beta.2（見下方「版本號規則」）
 > **Project**: Ready-mPOS
 > **Description**: 店家記帳系統 — 給餐廳/咖啡廳老闆用的記帳 App，解決手寫記帳本的核心痛點
 > **Features**: Offline-first PWA, Google Sheets sync, dynamic categories, push notifications, GitHub Pages deployment
@@ -72,7 +72,7 @@ Before starting any task:
 - **PATCH**：修正與小調整（bug fix、文案、樣式）。
 - **預發布**：cutover（改回正式試算表名、遷移真實資料、併 main）**之前**掛 `-beta.N` 尾碼表示尚未上正式資料。
 
-**目前 = `2.0.0-beta.1`**：逐筆交易是資料模型大改 → MAJOR 進位到 2；cutover 前為 beta。
+**目前 = `2.0.0-beta.2`**：逐筆交易是資料模型大改 → MAJOR 進位到 2；cutover 前為 beta（beta.2 = 刪除/編輯同步修正）。
 cutover 併 main 時轉正式 `2.0.0`，其後功能→bump MINOR、修正→bump PATCH。
 
 ---
@@ -186,6 +186,7 @@ Ready-mPOS/
 - `lib/sheets.ts`：`pullAllTransactionsFromSheets` 逐月偵測格式——新格式直接讀；舊彙總格式用抽出的純函式 `parseOldMonthRows` + `explodeDailyRecord` 就地拆成交易，並標記該月待改寫。`syncMonthTransactionsToSheets` 對新格式月份 `values:clear` + 整表覆蓋寫回。`backupSpreadsheet` 在改寫任何舊格式分頁前建立時間戳備份：**Sheets API 匯出**（逐分頁讀值寫入新建備份表，走既有 `spreadsheets` scope）——原 Drive `files.copy` 方案因 `drive.file` scope 只授權 app 自建檔案、對既有表 403 `appNotAuthorizedToFile` 而棄用，`drive.file` 已自 `SCOPES` 移除。
 - **資料保護紅線**：舊格式分頁改寫前必先 `backupSpreadsheet` 成功；備份失敗則該輪同步**跳過所有舊格式分頁改寫**（即使該月同時有本機 `PENDING` 待寫也不改寫，等下次同步重試）。
 - `hooks/useSyncService.ts`：`syncAll`/`restoreFromSheets`/`clearLocalData` 已改讀寫 `db.transactions`（以 id 去重對帳，本機 `PENDING` 優先）。
+- **刪除同步 = 軟刪除墓碑（2026-07-09 修正）**：`deleteTransaction` 改標 `syncStatus='DELETED'`（不硬刪）——硬刪會讓雲端列永不移除、且下次 pull 對帳把該列當新資料「復活」加回。機制：畫面查詢（`useDay/useMonthTransactions`）過濾墓碑；`syncAll` 待改寫月份含 `DELETED`，寫回時排除墓碑列（整月 clear+覆蓋 → 雲端該列消失），**寫回成功後才真正清除墓碑**（失敗保留、下次重試）；墓碑存在期間 merge 不 toAdd 也不覆蓋（Vitest 鎖定）。**儲存/刪除後自動同步**：`App → LedgerPage → TransactionSheet` 的 `onSync`（=`syncAll`）在每次成功寫入後觸發（修 Phase 4 換頁漏接「儲存後即時同步」）；刪除有二次確認小視窗。
 - ✅ **cutover 交易重複已解決（Task 6）**：`explodeDailyRecord` 現採決定性 id `mpos:<date>:<type>:<categoryId>`，本機 v3 upgrade 時產生的 id 與雲端 pull 時 re-explode 同一批舊資料產生的 id 完全相同，`mergeTransactionsById` 可正確辨識並去重，cutover 首次同步不再發生重複。此修正自動套用於新安裝及 v3 upgrade 過程（upgrade 僅執行一次）；在此修正前已於 dev 分支跑過舊版遷移的裝置，其本機交易仍為舊隨機 id，可使用 `restoreFromSheets`（覆蓋本機）或 `clearLocalData`（重置）重新同步。cutover（切換正式試算表、對真實使用者資料執行遷移）為使用者核准的硬停，本期未執行；表名已 env 化，dev/staging 自動連測試表、production build 自動連正式表（見「Git 分支流程」）。
 
 ### 帳目頁月曆 + 落地頁（第 2 次優化 Phase 6）

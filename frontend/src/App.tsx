@@ -95,7 +95,7 @@ function App() {
           <DashboardPage onNavigate={handleNavigate} syncing={syncing} />
         )}
         {tab === 'daily' && (
-          <LedgerPage date={dailyDate} onDateChange={setDailyDate} />
+          <LedgerPage date={dailyDate} onDateChange={setDailyDate} onSync={syncAll} />
         )}
         {tab === 'monthly' && (
           <MonthlyReportPage onSelectDate={handleSelectDate} />

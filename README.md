@@ -241,6 +241,7 @@ Ready-mPOS/
 - `pullAllTransactionsFromSheets` 逐月偵測新舊格式：舊彙總格式用抽出的純函式 `parseOldMonthRows` + `explodeDailyRecord` 就地拆成交易並標記待改寫；`syncMonthTransactionsToSheets` 對新格式月份整表覆蓋寫回
 - `backupSpreadsheet`：改寫任何舊格式分頁前，先建立時間戳備份表——**Sheets API 匯出**（逐分頁讀值寫入新建備份表，走既有 `spreadsheets` scope；原 Drive `files.copy`+`drive.file` 方案對既有表 403 已棄用）；🔒 備份失敗則本輪同步跳過所有舊格式改寫，即使該月同時有本機待同步交易也不動
 - `useSyncService.ts` 的 `syncAll`/`restoreFromSheets`/`clearLocalData` 全面切換到 `db.transactions`，以 `Transaction.id` 去重對帳（本機 `PENDING` 優先）
+- 🐛 刪除/編輯同步修正（2026-07-09，`2.0.0-beta.2`）：刪除改**軟刪除墓碑**（`DELETED`，畫面過濾、寫回 Sheets 時排除該列、成功後才清墓碑）——修掉「刪除永不同步、下次 pull 復活」；記帳 Sheet 儲存/刪除後**自動觸發同步**（修 Phase 4 換頁漏接）；刪除加二次確認小視窗
 - ✅ cutover 交易重複已解決（Task 6）：`explodeDailyRecord` 改用決定性 id，本機遷移與雲端 re-explode 出的同批交易 id 相同，`mergeTransactionsById` 可正確去重，cutover 首次同步不再重複
 - ⚠️ Dashboard・月結當時仍讀 `DailyRecord`（含手續費後淨額），已於 Phase 7 改用交易重算
 
