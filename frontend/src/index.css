@@ -23,3 +23,11 @@ input[type='number']::-webkit-outer-spin-button {
 * {
   -webkit-tap-highlight-color: transparent;
 }
+
+/* 旋轉動畫（同步／資料升級中的 spinner） */
+@keyframes mpos-spin {
+  to { transform: rotate(360deg); }
+}
+.mpos-spin {
+  animation: mpos-spin 0.9s linear infinite;
+}

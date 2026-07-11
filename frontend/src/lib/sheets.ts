@@ -1,5 +1,7 @@
-import type { DailyRecord, Category } from '../types'
-import { applyCloudCategories, isCategoriesDirty, clearCategoriesDirty } from './categories'
+import type { DailyRecord, Category, Transaction } from '../types'
+import { applyCloudCategories, isCategoriesDirty, clearCategoriesDirty, serializeSubs, parseSubs } from './categories'
+import { TX_MONTH_HEADERS, isNewTxFormat, txToRow, rowToTx, type TxSeed } from './txSheets'
+import { explodeDailyRecord } from './migrate'
 
 const CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) || ''
 
@@ -9,6 +11,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/userinfo.email',
   // Drive metadata 僅用於搜尋同名試算表，確保跨裝置使用同一份檔案
+  // 依名稱搜尋 / 檢查垃圾桶：唯讀 metadata 即足夠（findSpreadsheetByName、clearIfInvalidSpreadsheet）
   'https://www.googleapis.com/auth/drive.metadata.readonly',
 ].join(' ')
 
@@ -28,7 +31,7 @@ const FIXED_COLS = new Set([COL_DATE, COL_NOTES, COL_ITEM_NOTES, COL_TOTAL_INCOM
 
 // _config tab 欄位順序
 const CONFIG_TAB     = '_config'
-const CONFIG_HEADERS = ['id', 'name', 'icon', 'color', 'fee', 'enabled', 'type']
+const CONFIG_HEADERS = ['id', 'name', 'icon', 'color', 'fee', 'enabled', 'type', 'subs', 'defaultSub']
 
 interface TokenInfo {
   access_token: string
@@ -160,6 +163,8 @@ export async function getOrCreateSpreadsheet(title: string, initialSheetTitle?: 
 
 export const getSignedInEmail  = (): string | null => localStorage.getItem(LS_EMAIL)
 export const getSpreadsheetId  = (): string => localStorage.getItem(LS_SHEET_ID) ?? ''
+// 回傳已儲存的試算表名稱（跨裝置解析用）；空字串 = 尚未儲存
+export const getStoredSheetName = (): string => localStorage.getItem(LS_SHEET_NAME) ?? ''
 
 export const setSpreadsheetId = (id: string, name?: string): void => {
   localStorage.setItem(LS_SHEET_ID, id)
@@ -171,7 +176,10 @@ export const clearSpreadsheet = (): void => {
   localStorage.removeItem(LS_SHEET_NAME)
 }
 
-// 檢查已儲存的試算表 ID 是否仍有效，無效則清除
+// 檢查已儲存的試算表 ID 是否仍有效，「確定失效」才清除指標。
+// 🔴 只在「確定不存在」時清除：404（已永久刪除）或 trashed=true（在垃圾桶）。
+//    其他情況（5xx／429／網路／401／403 權限）視為暫時性，保留指標稍後重試，
+//    避免因一時錯誤誤清指標後被重新解析成另一張（甚至新建的空）試算表 → 資料看似消失。
 export async function clearIfInvalidSpreadsheet(): Promise<void> {
   const id = getSpreadsheetId()
   if (!id) return
@@ -181,11 +189,12 @@ export async function clearIfInvalidSpreadsheet(): Promise<void> {
       `https://www.googleapis.com/drive/v3/files/${id}?fields=id,trashed`,
       { headers: { Authorization: `Bearer ${token}` } },
     )
-    if (!res.ok) { clearSpreadsheet(); return }
+    if (res.status === 404) { clearSpreadsheet(); return } // 確定已刪除
+    if (!res.ok) return                                    // 暫時性/權限錯誤 → 保留指標
     const data = (await res.json()) as { id: string; trashed: boolean }
-    if (data.trashed) clearSpreadsheet()
+    if (data.trashed) clearSpreadsheet()                   // 在垃圾桶 → 視為無效
   } catch {
-    // token 取得失敗時保留 ID，讓後續流程繼續決定
+    // token 取得或網路失敗 → 保留 ID，讓後續流程繼續決定
   }
 }
 
@@ -272,6 +281,8 @@ export async function pushConfigToSheets(spreadsheetId: string, categories: Cate
       c.fee ?? 0,
       c.enabled ? 'true' : 'false',
       c.type,
+      serializeSubs(c.subs ?? []),
+      c.defaultSubId ?? '',
     ]),
   ]
 
@@ -295,7 +306,7 @@ export async function pullConfigFromSheets(spreadsheetId: string): Promise<Categ
   const token = await acquireToken()
   try {
     const data = await sheetsGet<{ values?: string[][] }>(
-      `/${spreadsheetId}/values/${encodeURIComponent(CONFIG_TAB + '!A1:G')}`,
+      `/${spreadsheetId}/values/${encodeURIComponent(CONFIG_TAB + '!A1:I')}`,
       token,
     )
     const rows = data.values ?? []
@@ -307,15 +318,21 @@ export async function pullConfigFromSheets(spreadsheetId: string): Promise<Categ
 
     const categories: Category[] = rows.slice(1)
       .filter(r => r[idx('id')])
-      .map(r => ({
-        id:      r[idx('id')],
-        name:    r[idx('name')]  ?? '',
-        icon:    r[idx('icon')]  ?? 'tag',
-        color:   r[idx('color')] ?? 'mint',
-        fee:     parseFloat(r[idx('fee')]) || 0,
-        enabled: r[idx('enabled')] !== 'false',
-        type:    (r[idx('type')] === 'expense' ? 'expense' : 'income') as 'income' | 'expense',
-      }))
+      .map(r => {
+        const subsRaw = idx('subs') >= 0 ? (r[idx('subs')] ?? '') : ''
+        const defRaw  = idx('defaultSub') >= 0 ? (r[idx('defaultSub')] ?? '') : ''
+        return {
+          id:      r[idx('id')],
+          name:    r[idx('name')]  ?? '',
+          icon:    r[idx('icon')]  ?? 'tag',
+          color:   r[idx('color')] ?? 'mint',
+          fee:     parseFloat(r[idx('fee')]) || 0,
+          enabled: r[idx('enabled')] !== 'false',
+          type:    (r[idx('type')] === 'expense' ? 'expense' : 'income') as 'income' | 'expense',
+          subs:        parseSubs(subsRaw),
+          defaultSubId: defRaw || null,
+        }
+      })
 
     if (categories.length > 0) {
       // 套用前再次檢查：拉取期間使用者可能剛好做了編輯
@@ -374,6 +391,50 @@ function recordToRow(r: DailyRecord, categories: Category[]): (string | number)[
 
 // ── 核心同步函式 ───────────────────────────────────────────
 
+// 舊彙總格式：單一月份分頁 rows → DailyRecord[]（沿用既有解析：未知欄位略過、項目備註反解析）
+export function parseOldMonthRows(rows: string[][], categories: Category[]): DailyRecord[] {
+  const now = new Date().toISOString()
+  const catByName = new Map(categories.map(c => [c.name, c]))
+  const out: DailyRecord[] = []
+  if (rows.length < 2) return out
+  const header = rows[0]
+  for (const row of rows.slice(1)) {
+    const date = row[header.indexOf(COL_DATE)]
+    if (!date) continue
+    const incomes: Record<string, number> = {}
+    const expenses: Record<string, number> = {}
+    header.forEach((colName, i) => {
+      if (FIXED_COLS.has(colName)) return
+      const val = Number(row[i]) || 0
+      if (val === 0) return
+      const cat = catByName.get(colName)
+      if (cat?.type === 'expense') expenses[cat.id] = val
+      else if (cat) incomes[cat.id] = val
+    })
+    const incomeNotes: Record<string, string> = {}
+    const expenseNotes: Record<string, string> = {}
+    const rawItemNotes = (row[header.indexOf(COL_ITEM_NOTES)] ?? '').trim()
+    if (rawItemNotes) {
+      for (const part of rawItemNotes.split(';')) {
+        const sep = part.indexOf(':')
+        if (sep < 1) continue
+        const catName = part.slice(0, sep).trim()
+        const noteVal = part.slice(sep + 1).trim()
+        if (!noteVal) continue
+        const cat = catByName.get(catName)
+        if (cat?.type === 'expense') expenseNotes[cat.id] = noteVal
+        else if (cat) incomeNotes[cat.id] = noteVal
+      }
+    }
+    out.push({
+      date, incomes, expenses, incomeNotes, expenseNotes,
+      notes: row[header.indexOf(COL_NOTES)] ?? '',
+      syncStatus: 'SYNCED', createdAt: now, updatedAt: now,
+    })
+  }
+  return out
+}
+
 // 從雲端試算表還原所有月份資料
 // 需傳入 categories（先呼叫 pullConfigFromSheets 取得），以正確分類 income / expense
 export async function pullAllFromSheets(spreadsheetId: string, categories: Category[]): Promise<DailyRecord[]> {
@@ -381,10 +442,6 @@ export async function pullAllFromSheets(spreadsheetId: string, categories: Categ
   const titles = await getSheetTitles(spreadsheetId, token)
   const monthTabs = titles.filter(t => /^\d{4}-\d{2}$/.test(t))
   const records: DailyRecord[] = []
-  const now = new Date().toISOString()
-
-  // 建立 category name → {id, type} 對照表，用於解析歷史欄位
-  const catByName = new Map(categories.map(c => [c.name, c]))
 
   for (const month of monthTabs) {
     const data = await sheetsGet<{ values?: string[][] }>(
@@ -395,60 +452,114 @@ export async function pullAllFromSheets(spreadsheetId: string, categories: Categ
     const rows = data.values ?? []
     if (rows.length < 2) continue
 
-    const header = rows[0]
-
-    for (const row of rows.slice(1)) {
-      const date = row[header.indexOf(COL_DATE)]
-      if (!date) continue
-
-      const incomes:  Record<string, number> = {}
-      const expenses: Record<string, number> = {}
-
-      header.forEach((colName, i) => {
-        if (FIXED_COLS.has(colName)) return
-        const val = Number(row[i]) || 0
-        if (val === 0) return
-        const cat = catByName.get(colName)
-        if (cat?.type === 'expense') {
-          expenses[cat.id] = val
-        } else if (cat) {
-          incomes[cat.id] = val
-        }
-        // 找不到對應類別的欄位直接略過，避免污染 incomes 造成金額虛增
-      })
-
-      // 反向解析項目備註欄：「類別名:備註;類別名:備註」→ incomeNotes / expenseNotes
-      const incomeNotes:  Record<string, string> = {}
-      const expenseNotes: Record<string, string> = {}
-      const rawItemNotes = (row[header.indexOf(COL_ITEM_NOTES)] ?? '').trim()
-      if (rawItemNotes) {
-        for (const part of rawItemNotes.split(';')) {
-          const sep = part.indexOf(':')
-          if (sep < 1) continue
-          const catName = part.slice(0, sep).trim()
-          const noteVal = part.slice(sep + 1).trim()
-          if (!noteVal) continue
-          const cat = catByName.get(catName)
-          if (cat?.type === 'expense') expenseNotes[cat.id] = noteVal
-          else if (cat) incomeNotes[cat.id] = noteVal
-        }
-      }
-
-      records.push({
-        date,
-        incomes,
-        expenses,
-        incomeNotes,
-        expenseNotes,
-        notes:      row[header.indexOf(COL_NOTES)] ?? '',
-        syncStatus: 'SYNCED',
-        createdAt:  now,
-        updatedAt:  now,
-      })
-    }
+    records.push(...parseOldMonthRows(rows, categories))
   }
 
   return records
+}
+
+// 舊→新格式改寫前的安全備份：把整份試算表的資料複製到一張「新建、由本 app 建立」的備份表。
+// 🔴 為何不用 Drive files.copy（曾用 drive.file scope，已移除）：drive.file 只能操作「本 app 建立」的檔案，
+//    對使用者手動建立/複製、或在 app 取得 drive.file 之前就已存在的試算表（含正式站舊表），
+//    files.copy 會回 403 appNotAuthorizedToFile。改用 spreadsheets scope（可讀寫使用者所有試算表）
+//    逐分頁讀值 → 寫進一張新建備份表：不依賴逐檔 Drive 授權，彩排（複製表）與真實 cutover（舊正式表）皆可用。
+//    僅備份「數值」（本 app 資料無格式需求），回傳備份表 id。
+export async function backupSpreadsheet(spreadsheetId: string): Promise<string> {
+  const token = await acquireToken()
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+
+  // 1. 讀來源所有分頁的值（逐分頁 values 讀，避免 includeGridData 過重；空分頁容錯為 []）
+  const titles = await getSheetTitles(spreadsheetId, token)
+  const tabs: { title: string; values: unknown[][] }[] = []
+  for (const title of titles) {
+    const data = await sheetsGet<{ values?: unknown[][] }>(
+      `/${spreadsheetId}/values/${encodeURIComponent(title + '!A1:ZZ')}`,
+      token,
+    )
+    tabs.push({ title, values: data.values ?? [] })
+  }
+
+  // 2. 建立新的備份試算表（Sheets API 建表由 spreadsheets scope 涵蓋）；一次帶齊所有來源分頁名
+  const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      properties: { title: `Ready-mPOS 備份 ${stamp}` },
+      sheets: titles.map(t => ({ properties: { title: t } })),
+    }),
+  })
+  if (!createRes.ok) {
+    const msg = await createRes.text().catch(() => '')
+    throw new Error(`建立備份試算表失敗：${createRes.status} ${msg}`)
+  }
+  const { spreadsheetId: backupId } = (await createRes.json()) as { spreadsheetId: string }
+
+  // 3. 把每個分頁的值寫進備份表（RAW 保留原字串，例如交易 id / 前導零，不被自動解析）
+  for (const tab of tabs) {
+    if (tab.values.length === 0) continue
+    await sheetsPut(
+      `/${backupId}/values/${encodeURIComponent(tab.title + '!A1')}?valueInputOption=RAW`,
+      { values: tab.values },
+      token,
+    )
+  }
+
+  return backupId
+}
+
+// 讀所有月份分頁 → 交易 seeds；同時回報哪些分頁仍是舊格式（需改寫）
+export async function pullAllTransactionsFromSheets(
+  spreadsheetId: string, categories: Category[],
+): Promise<{ seeds: TxSeed[]; oldFormatMonths: string[] }> {
+  const token = await acquireToken()
+  const titles = await getSheetTitles(spreadsheetId, token)
+  const monthTabs = titles.filter(t => /^\d{4}-\d{2}$/.test(t))
+  const catByName = new Map(categories.map(c => [c.name, c]))
+  const now = new Date().toISOString()
+  const seeds: TxSeed[] = []
+  const oldFormatMonths: string[] = []
+
+  for (const month of monthTabs) {
+    const data = await sheetsGet<{ values?: string[][] }>(
+      `/${spreadsheetId}/values/${encodeURIComponent(month + '!A1:ZZ')}`, token,
+    ).catch(() => ({ values: undefined }))
+    const rows = data.values ?? []
+    if (rows.length < 2) continue
+    const header = rows[0]
+
+    if (isNewTxFormat(header)) {
+      for (const row of rows.slice(1)) {
+        const seed = rowToTx(row, header, catByName, now)
+        if (seed) seeds.push(seed)
+      }
+    } else {
+      // 舊彙總格式：解析成 DailyRecord 再逐筆拆解為交易，並標記此月需改寫
+      oldFormatMonths.push(month)
+      for (const rec of parseOldMonthRows(rows, categories)) {
+        for (const s of explodeDailyRecord(rec)) seeds.push(s)
+      }
+    }
+  }
+  return { seeds, oldFormatMonths }
+}
+
+// 將某月所有交易以新格式整批覆蓋寫入（先 clear 再 put，天然去除筆數變動殘留）
+export async function syncMonthTransactionsToSheets(
+  spreadsheetId: string, month: string, txs: (Transaction | TxSeed)[], categories: Category[],
+): Promise<void> {
+  const token = await acquireToken()
+  await ensureSheet(spreadsheetId, month, token)
+  const catById = new Map(categories.map(c => [c.id, c]))
+  const values: (string | number)[][] = [
+    [...TX_MONTH_HEADERS],
+    ...txs.map(t => txToRow(t, catById)),
+  ]
+  await sheetsValuesClear(spreadsheetId, month, token)
+  await sheetsPut(
+    `/${spreadsheetId}/values/${encodeURIComponent(month + '!A1')}?valueInputOption=USER_ENTERED`,
+    { range: `${month}!A1`, majorDimension: 'ROWS', values },
+    token,
+  )
 }
 
 // 將某月所有記錄整批寫入 Google Sheets（覆蓋式）

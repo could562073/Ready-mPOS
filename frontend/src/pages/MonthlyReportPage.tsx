@@ -2,7 +2,8 @@ import { useRef, useState } from 'react'
 import { T, colorMap } from '../lib/tokens'
 import { fmt } from '../lib/fmt'
 import { Icon } from '../components/Icon'
-import { useMonthlyRecords } from '../hooks/useMonthlyRecords'
+import { useMonthTransactions } from '../hooks/useTransactions'
+import { buildDailyRecordsFromTx } from '../lib/aggregate'
 import { getCategories, calcFees } from '../lib/categories'
 import type { DailyRecord } from '../types'
 
@@ -183,7 +184,9 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
   const [month, setMonth] = useState(() => toMonthString(new Date()))
   const [view,  setView]  = useState<'chart' | 'list'>('chart')
   const monthInputRef = useRef<HTMLInputElement>(null)
-  const { records, loading } = useMonthlyRecords(month)
+  // 改用逐筆交易查詢 + 純函式重算合成 DailyRecord（Phase 7 Task 3），下游計算/圖表邏輯零改動重用
+  const { transactions, loading } = useMonthTransactions(month)
+  const records = buildDailyRecordsFromTx(transactions)
 
   const allCategories  = getCategories()
   const knownIncomeIds  = new Set(allCategories.filter(c => c.type === 'income').map(c => c.id))
@@ -324,7 +327,7 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
                 const day = parseInt(r.date.slice(8))
                 return (
                   <button
-                    key={r.id}
+                    key={r.date}
                     onClick={() => onSelectDate(r.date)}
                     style={{
                       display: 'grid', gridTemplateColumns: '60px 1fr 1fr 1fr',

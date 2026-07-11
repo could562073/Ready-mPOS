@@ -100,6 +100,14 @@ interface Category {
   - `subs`：序列化二級清單，格式 `subId:subName|subId:subName`。
   - `defaultSub`：預設二級 id（空 = 無）。
 - push/pull 對這兩欄做序列化/反序列化；缺欄時容錯（視為無二級）。
+- **🔴 Phase 3 必做（Phase 2 全期 review 確認的資料流失修正）**：`pushConfigToSheets` 與 `pullConfigFromSheets` 必須**同步改（lockstep）**，且 `CONFIG_HEADERS` 要新增 `subs`/`defaultSub` 欄；`push` 必須在 `clearCategoriesDirty()` **之前**就把 subs 序列化寫入。否則現況的「push 只寫舊 7 欄 → 清 dirty → 下次 pull 用無 subs 雲端設定覆蓋 localStorage」序列會**清掉使用者剛建立的二級**。此為**同一台已登入裝置、日常動作（記一筆帳即觸發 syncAll）就會發生**的資料流失，非僅跨裝置——Phase 2 期間僅靠「不併 main」閘門擋住正式環境曝險（見下方遷移時序註記）。
+
+### Phase 5 實作決策（落地後回補）
+
+- **未知一級類別名稱**：pull 新格式月份分頁時，若一級/二級名稱在本機 `Category` 找不到對應，**保留原字串**存入交易（不丟資料、不擋同步），沿用「未知欄位略過但不污染金額」精神；待使用者之後重建同名類別或手動修正即可對回。
+- **備份 scope**：`backupSpreadsheet` 用 Drive `files.copy`，需要 `drive.file` OAuth scope；`SCOPES` 因此擴充，**既有已登入使用者第一次執行到會觸發重新授權彈窗**（一次性）。
+- **備份失敗的處理**：`backupSpreadsheet` 失敗（配額、權限、網路）→ 該輪同步**完全跳過舊格式分頁改寫**，包含同時有本機 `PENDING` 交易待寫入的舊格式月份也不例外；新格式月份的正常同步不受影響。下次同步重試備份，不做部分改寫以避免「備份沒成功但資料已被覆蓋」的不可逆風險。
+- **✅ cutover 交易重複已解決（Task 6）**：`explodeDailyRecord` 現採決定性 id `mpos:<date>:<type>:<categoryId>`（不再用隨機 id）。cutover 首次同步時，本機（v3 upgrade 時就地遷移產生）與雲端 pull 路徑（舊格式 pull 時 re-explode 同一批 `dailyRecords`）對同一批歷史資料產生**相同的決定性 id**，`mergeTransactionsById` 可正確辨識並去重，不再導致重複匯入。此修正自動套用於新安裝及 v3 upgrade 過程（upgrade 僅執行一次）；在此修正前已於 dev 分支跑過舊版遷移（隨機 id）的裝置，其本機交易仍為舊隨機 id，可使用 `restoreFromSheets`（覆蓋本機）或 `clearLocalData`（重置）重新同步獲得新決定性 id。此修正只影響 cutover 那一次性遷移及之前的歷史資料，不影響 Phase 5 之後日常的逐筆交易同步。
 
 ## UI / 資訊架構
 
@@ -161,12 +169,20 @@ interface Category {
 
 1. **資料層 + 遷移**：`Transaction` 型別、Dexie v3 遷移、交易 CRUD hook。
 2. **類別二級**：`Category` 擴充、`lib/categories` 二級 CRUD、`CategoriesPage` UI。
-3. **Sheets 同步**：新格式讀寫、舊格式偵測改寫、`_config` 擴充。
+3. **Sheets 同步（`_config`）**：`_config` 的 `subs`/`defaultSub` 序列化擴充 + 資料流失修正 + feature 分支試算表隔離。
 4. **記帳輸入 Sheet**：FAB + 新增/編輯交易 Sheet。
-5. **帳目頁（月曆+列表）+ 導覽/落地頁調整**。
+5. **帳目頁（月曆+列表）+ 導覽/落地頁調整 + 月份分頁新格式**：含月份分頁 Transaction 新格式讀寫、舊格式偵測改寫、Drive 備份、Transaction.id 對帳。
 6. **Dashboard / 月結重算**：改用 Transaction。
 
 每階段可獨立跑、可 commit、可驗證。
+
+> **📌 分期調整（2026-07-04，決策 D4）**：原 Phase 3 含「月份分頁新格式讀寫 + 舊格式偵測改寫」，但現況 `syncAll` 仍同步舊 `DailyRecord`、UI 到 Phase 4/5 才改寫 `transactions`；若 Phase 3 就切月份分頁為 Transaction 新格式，會使 UI 新記的 DailyRecord 不再被同步而破壞現有 App。故**月份分頁新格式 / 舊格式偵測改寫 / Drive 備份改列入 Phase 5**（與 UI 切換 + `Transaction.id` 對帳同期，才能端到端驗證）。Phase 3 收斂為 `_config` 二級同步 + 資料流失修正 + 試算表隔離。詳見 `docs/superpowers/loop/LOOP_STATE.md` 決策日誌 D4。
+
+### ⚠️ 遷移時序注意（Phase 4/5 UI 切換必做）
+
+Dexie v3 upgrade 只在瀏覽器**首次開啟 v3** 時，把 `dailyRecords` 遷移到 `transactions` **一次**。Phase 1–3 期間 UI 仍寫入舊 `dailyRecords`，因此**在 Phase 1 之後、UI 切換到讀 `transactions` 之前新增/修改的資料，只會存在於 `dailyRecords`**。
+
+Phase 4/5 把 UI 切到讀 `transactions` 時，**必須加一個「重新遷移 / 對帳」步驟**（以 `Transaction.id` 去重併入，避免重覆匯入），不可假設一次性 v3 upgrade 已涵蓋全部；否則這段期間新增的資料會從畫面上消失（原始資料仍安全存在 `dailyRecords`，可復原，但使用者看不到）。此點由 Phase 1 最終 code review 提出並記錄。
 
 ## YAGNI / 明確排除
 

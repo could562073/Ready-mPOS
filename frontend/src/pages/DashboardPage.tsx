@@ -1,8 +1,8 @@
 import { T, colorMap } from '../lib/tokens'
 import { fmt } from '../lib/fmt'
 import { Icon } from '../components/Icon'
-import { useDailyRecord } from '../hooks/useDailyRecord'
-import { useMonthlyRecords } from '../hooks/useMonthlyRecords'
+import { useDayTransactions, useMonthTransactions } from '../hooks/useTransactions'
+import { buildDailyRecordsFromTx } from '../lib/aggregate'
 import { getEnabledByType, getCategories, calcFees } from '../lib/categories'
 import type { DailyRecord } from '../types'
 
@@ -62,9 +62,14 @@ export function DashboardPage({ onNavigate, syncing }: Props) {
 
   const prevMonthStr = toMonthString(new Date(today.getFullYear(), today.getMonth() - 1, 1))
 
-  const { record: todayRecord } = useDailyRecord(todayStr)
-  const { records: monthRecords }     = useMonthlyRecords(monthStr)
-  const { records: prevMonthRecords } = useMonthlyRecords(prevMonthStr)
+  // 改由 transactions 重算：查詢逐筆交易後用 buildDailyRecordsFromTx 合成 DailyRecord，供下方既有彙總邏輯零改動重用
+  const { transactions: todayTxs }     = useDayTransactions(todayStr)
+  const { transactions: monthTxs }     = useMonthTransactions(monthStr)
+  const { transactions: prevMonthTxs } = useMonthTransactions(prevMonthStr)
+
+  const todayRecord      = buildDailyRecordsFromTx(todayTxs)[0] ?? null
+  const monthRecords     = buildDailyRecordsFromTx(monthTxs)
+  const prevMonthRecords = buildDailyRecordsFromTx(prevMonthTxs)
 
   // 從 localStorage 讀取啟用類別（mount 時讀一次）
   const incomeCategories  = getEnabledByType('income')

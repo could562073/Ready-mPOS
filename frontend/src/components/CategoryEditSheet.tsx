@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { T, colorMap } from '../lib/tokens'
 import { Icon } from './Icon'
-import { ICON_OPTIONS, COLOR_OPTIONS } from '../lib/categories'
+import { ICON_OPTIONS, COLOR_OPTIONS, addSub, renameSub, deleteSub, setDefaultSub } from '../lib/categories'
 
 export interface DraftCategory {
   id: string
@@ -11,13 +11,15 @@ export interface DraftCategory {
   fee?: number
   enabled: boolean
   type: 'income' | 'expense'
+  subs?: { id: string; name: string }[]
+  defaultSubId?: string | null
 }
 
 export const EMPTY_INCOME_DRAFT: DraftCategory = {
-  id: '', name: '', icon: 'tag', color: 'mint', fee: 0, enabled: true, type: 'income',
+  id: '', name: '', icon: 'tag', color: 'mint', fee: 0, enabled: true, type: 'income', subs: [], defaultSubId: null,
 }
 export const EMPTY_EXPENSE_DRAFT: DraftCategory = {
-  id: '', name: '', icon: 'tag', color: 'coral', fee: 0, enabled: true, type: 'expense',
+  id: '', name: '', icon: 'tag', color: 'coral', fee: 0, enabled: true, type: 'expense', subs: [], defaultSubId: null,
 }
 
 function IconGrid({ selected, onChange }: { selected: string; onChange: (v: string) => void }) {
@@ -167,6 +169,82 @@ export function EditSheet({ draft, isNew, onSave, onDelete, onClose }: {
             </div>
           )}
 
+          {/* 二級分類（繼承一級 icon/color/fee，只編輯名稱與預設） */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8 }}>二級分類</div>
+            {(local.subs ?? []).length === 0 && (
+              <div style={{ fontSize: 11, color: T.muted, fontWeight: 500, marginBottom: 8 }}>
+                可選。例如「雜項」下加「瓦斯費」「水費」，記帳時就能選到。
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {(local.subs ?? []).map(s => (
+                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    value={s.name}
+                    onChange={e => setLocal(renameSub(local, s.id, e.target.value) as DraftCategory)}
+                    placeholder="二級名稱"
+                    style={{
+                      flex: 1, padding: '10px 12px', borderRadius: T.r.sm,
+                      border: `1.5px solid ${T.hairline}`, fontSize: 14, fontWeight: 600,
+                      color: T.ink, background: T.bg, outline: 'none', fontFamily: T.font.sans, boxSizing: 'border-box',
+                    }}
+                  />
+                  <button
+                    aria-label={`刪除二級 ${s.name}`}
+                    onClick={() => setLocal(deleteSub(local, s.id) as DraftCategory)}
+                    style={{
+                      width: 36, height: 36, borderRadius: 10, border: 'none', flexShrink: 0,
+                      background: T.coralSoft, color: T.coralInk, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <Icon name="x" size={14} stroke={2.4} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setLocal(addSub(local, '') as DraftCategory)}
+              style={{
+                marginTop: 8, width: '100%', padding: '10px 12px', borderRadius: T.r.sm,
+                border: `1.5px dashed ${T.hairline}`, background: 'transparent', cursor: 'pointer',
+                fontFamily: T.font.sans, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                gap: 6, color: T.muted, fontSize: 13, fontWeight: 700,
+              }}
+            >
+              <Icon name="plus" size={14} stroke={2.6} /> 新增二級分類
+            </button>
+
+            {/* 預設二級（單選，含「無」） */}
+            {(local.subs ?? []).length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8 }}>記帳時預設帶入</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {([{ id: null as string | null, name: '無' }, ...(local.subs ?? [])]).map(opt => {
+                    const selected = (local.defaultSubId ?? null) === opt.id
+                    return (
+                      <button
+                        key={opt.id ?? '__none__'}
+                        onClick={() => setLocal(setDefaultSub(local, opt.id) as DraftCategory)}
+                        style={{
+                          padding: '8px 14px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                          fontFamily: T.font.sans, fontSize: 13, fontWeight: 700,
+                          background: selected ? T.ink : T.bg, color: selected ? '#fff' : T.muted,
+                          transition: 'all 150ms',
+                        }}
+                      >
+                        {opt.name || '（未命名）'}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
         </div>
 
         {/* 固定底部按鈕區 — 永遠可見，不受捲動影響 */}
@@ -182,7 +260,13 @@ export function EditSheet({ draft, isNew, onSave, onDelete, onClose }: {
             >刪除</button>
           )}
           <button
-            onClick={() => { if (local.name.trim()) onSave(local) }}
+            onClick={() => {
+              if (!local.name.trim()) return
+              // 儲存時把二級名稱 trim、丟掉空白項；若預設二級已被刪/清空則歸零
+              const subs = (local.subs ?? []).map(s => ({ ...s, name: s.name.trim() })).filter(s => s.name)
+              const defaultSubId = subs.some(s => s.id === local.defaultSubId) ? local.defaultSubId! : null
+              onSave({ ...local, subs, defaultSubId })
+            }}
             disabled={!local.name.trim()}
             style={{
               flex: 2, padding: '14px 0', borderRadius: T.r.md, border: 'none',

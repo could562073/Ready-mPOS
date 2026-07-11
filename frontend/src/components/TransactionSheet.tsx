@@ -1,0 +1,444 @@
+import { useState } from 'react'
+import { T, colorMap } from '../lib/tokens'
+import { Icon } from './Icon'
+import { getCategories, addSub, saveCategories } from '../lib/categories'
+import { addTransaction, updateTransaction, deleteTransaction } from '../lib/transactions'
+import { pickInitialSub } from '../lib/txDraft'
+import { getLastSub, rememberLastSub } from '../lib/subMemory'
+import type { Transaction } from '../types'
+
+// 記帳草稿 — 金額一律正數，收支方向由 type 決定
+interface Draft {
+  type: 'income' | 'expense'
+  categoryId: string
+  subId: string | null
+  amount: number
+  note: string
+  d: string // 'YYYY-MM-DD'
+}
+
+function draftFromEditing(editing: Transaction, fallbackDate: string): Draft {
+  return {
+    type: editing.type,
+    categoryId: editing.categoryId,
+    subId: editing.subId ?? null,
+    amount: editing.amount,
+    note: editing.note ?? '',
+    d: editing.date || fallbackDate,
+  }
+}
+
+function emptyDraft(date: string): Draft {
+  return { type: 'expense', categoryId: '', subId: null, amount: 0, note: '', d: date }
+}
+
+export function TransactionSheet({ date, editing, onClose, onSaved, onSync }: {
+  date: string                 // 新增時預設日期 'YYYY-MM-DD'
+  editing: Transaction | null  // null=新增；非 null=編輯此筆
+  onClose: () => void
+  onSaved: () => void          // 儲存/刪除成功後通知
+  onSync?: () => void          // 每次成功寫入（新增/編輯/刪除）後觸發雲端同步（fire-and-forget）
+}) {
+  const isNew = editing === null
+  const [draft, setDraft] = useState<Draft>(() => editing ? draftFromEditing(editing, date) : emptyDraft(date))
+  const update = (patch: Partial<Draft>) => setDraft(prev => ({ ...prev, ...patch }))
+
+  // 就地新增二級：是否展開輸入、輸入值
+  const [addingSub, setAddingSub] = useState(false)
+  const [newSubName, setNewSubName] = useState('')
+
+  const categories = getCategories().filter(c => c.type === draft.type && c.enabled)
+  const selectedCat = categories.find(c => c.id === draft.categoryId)
+  const subOptions = selectedCat?.subs ?? []
+  const previewColor = colorMap[selectedCat?.color ?? 'coral'] ?? colorMap['coral']
+
+  const canSave = draft.categoryId !== '' && draft.amount > 0
+
+  // 收支切換 — 類別依 type 過濾，切換時清空已選類別/二級
+  const switchType = (type: 'income' | 'expense') => {
+    if (type === draft.type) return
+    update({ type, categoryId: '', subId: null })
+    setAddingSub(false)
+    setNewSubName('')
+  }
+
+  // 選定一級 — 二級帶入「上次在這個一級用的二級」（無記憶則退回 defaultSubId）
+  const pickCategory = (catId: string) => {
+    const cat = categories.find(c => c.id === catId)
+    update({ categoryId: catId, subId: pickInitialSub(cat, getLastSub(catId)) })
+    setAddingSub(false)
+    setNewSubName('')
+  }
+
+  // 就地新增二級：寫回類別（localStorage + 標 dirty，下次 syncAll 推 _config）並自動選取
+  const confirmAddSub = () => {
+    const name = newSubName.trim()
+    if (!name || !selectedCat) return
+    const updated = addSub(selectedCat, name)
+    saveCategories(getCategories().map(c => (c.id === updated.id ? updated : c)))
+    const created = updated.subs![updated.subs!.length - 1] // addSub 把新 sub 放在末端
+    update({ subId: created.id })
+    setNewSubName('')
+    setAddingSub(false)
+  }
+
+  const buildInput = () => ({
+    date: draft.d,
+    type: draft.type,
+    categoryId: draft.categoryId,
+    subId: draft.subId,
+    amount: draft.amount,
+    note: draft.note.trim() || undefined,
+  })
+
+  const save = async (continueAfter: boolean) => {
+    if (!canSave) return
+    if (isNew) {
+      await addTransaction(buildInput())
+      rememberLastSub(draft.categoryId, draft.subId) // 記住這個一級這次用的二級
+      onSync?.()                      // 儲存後即時同步（含「儲存並繼續」的每一筆）
+      if (continueAfter) {
+        update({ amount: 0, note: '' }) // 保留 type/category/sub/date，只清金額與備註
+      } else {
+        onSaved()
+      }
+    } else {
+      await updateTransaction(editing!.localId!, buildInput())
+      rememberLastSub(draft.categoryId, draft.subId)
+      onSync?.()
+      onSaved()
+    }
+  }
+
+  // 刪除採兩段式：先開確認視窗（confirmingDelete），使用者確認後才軟刪 + 觸發同步
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const remove = async () => {
+    await deleteTransaction(editing!.localId!)   // 軟刪除（DELETED 墓碑），同步時從雲端移除該列
+    setConfirmingDelete(false)
+    onSync?.()
+    onSaved()
+  }
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(26,27,37,0.45)' }}
+      />
+      <div style={{
+        position: 'fixed', bottom: 0, left: '50%',
+        transform: 'translateX(-50%)',
+        width: '100%', maxWidth: 430,
+        background: T.card, borderRadius: '24px 24px 0 0',
+        padding: '0 0 calc(env(safe-area-inset-bottom) + 16px)',
+        zIndex: 101,
+        boxShadow: '0 -4px 32px rgba(26,27,37,0.18)',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: T.hairline }} />
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 20px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 13,
+              background: previewColor.soft, color: previewColor.ink,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Icon name={selectedCat?.icon ?? 'tag'} size={20} stroke={2.2} />
+            </div>
+            <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>
+              {isNew ? '新增交易' : '編輯交易'}
+            </span>
+          </div>
+          <button onClick={onClose} style={{ border: 'none', background: T.bg, borderRadius: 10, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.muted }}>
+            <Icon name="x" size={16} stroke={2.4} />
+          </button>
+        </div>
+
+        {/* 可捲動內容區 — 不含操作按鈕 */}
+        <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 20, maxHeight: '55vh', overflowY: 'auto', paddingBottom: 8 }}>
+
+          {/* 收入/支出切換 */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            {(['expense', 'income'] as const).map(t => {
+              const selected = draft.type === t
+              return (
+                <button
+                  key={t}
+                  aria-label={t === 'income' ? '收入' : '支出'}
+                  onClick={() => switchType(t)}
+                  style={{
+                    flex: 1, padding: '10px 0', borderRadius: T.r.sm, border: 'none', cursor: 'pointer',
+                    fontFamily: T.font.sans, fontSize: 14, fontWeight: 800,
+                    background: selected ? T.ink : T.bg, color: selected ? '#fff' : T.muted,
+                    transition: 'all 150ms',
+                  }}
+                >
+                  {t === 'income' ? '收入' : '支出'}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* 一級類別 chips */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8 }}>類別</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {categories.map(c => {
+                const selected = draft.categoryId === c.id
+                const cc = colorMap[c.color] ?? colorMap['coral']
+                return (
+                  <button
+                    key={c.id}
+                    aria-label={`類別 ${c.name}`}
+                    onClick={() => pickCategory(c.id)}
+                    style={{
+                      padding: '8px 14px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                      fontFamily: T.font.sans, fontSize: 13, fontWeight: 700,
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      background: selected ? T.ink : T.bg, color: selected ? '#fff' : T.muted,
+                      transition: 'all 150ms',
+                    }}
+                  >
+                    <Icon name={c.icon} size={14} stroke={2.4} color={selected ? '#fff' : cc.ink} />
+                    {c.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 二級分類 — 選了一級即顯示（含「無」、既有二級、就地新增） */}
+          {draft.categoryId !== '' && (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8 }}>二級分類</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {([{ id: null as string | null, name: '無' }, ...subOptions]).map(opt => {
+                  const selected = draft.subId === opt.id
+                  return (
+                    <button
+                      key={opt.id ?? '__none__'}
+                      aria-label={`二級 ${opt.name}`}
+                      onClick={() => update({ subId: opt.id })}
+                      style={{
+                        padding: '8px 14px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                        fontFamily: T.font.sans, fontSize: 13, fontWeight: 700,
+                        background: selected ? T.ink : T.bg, color: selected ? '#fff' : T.muted,
+                        transition: 'all 150ms',
+                      }}
+                    >
+                      {opt.name}
+                    </button>
+                  )
+                })}
+                {/* ＋新增二級 chip */}
+                {!addingSub && (
+                  <button
+                    aria-label="新增二級"
+                    onClick={() => setAddingSub(true)}
+                    style={{
+                      padding: '8px 14px', borderRadius: 999, border: `1.5px dashed ${T.hairline}`,
+                      background: 'transparent', color: T.ink2, cursor: 'pointer',
+                      fontFamily: T.font.sans, fontSize: 13, fontWeight: 700,
+                      display: 'flex', alignItems: 'center', gap: 4,
+                    }}
+                  >
+                    <Icon name="plus" size={13} stroke={2.6} /> 新增二級
+                  </button>
+                )}
+              </div>
+
+              {/* 就地新增輸入 */}
+              {addingSub && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <input
+                    value={newSubName}
+                    onChange={e => setNewSubName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') confirmAddSub() }}
+                    placeholder="新二級名稱"
+                    aria-label="新二級名稱"
+                    autoFocus
+                    style={{
+                      flex: 1, padding: '10px 12px', borderRadius: T.r.sm,
+                      border: `1.5px solid ${T.hairline}`, fontSize: 14, fontWeight: 600,
+                      color: T.ink, background: T.bg, outline: 'none', fontFamily: T.font.sans,
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  <button
+                    onClick={confirmAddSub}
+                    disabled={!newSubName.trim()}
+                    aria-label="確認新增二級"
+                    style={{
+                      padding: '0 16px', borderRadius: T.r.sm, border: 'none',
+                      background: newSubName.trim() ? T.ink : '#D8D9E0', color: '#fff',
+                      fontSize: 13, fontWeight: 800, cursor: newSubName.trim() ? 'pointer' : 'default',
+                      fontFamily: T.font.sans,
+                    }}
+                  >加入</button>
+                  <button
+                    onClick={() => { setAddingSub(false); setNewSubName('') }}
+                    aria-label="取消新增二級"
+                    style={{
+                      padding: '0 12px', borderRadius: T.r.sm, border: 'none',
+                      background: T.bg, color: T.muted, fontSize: 13, fontWeight: 700,
+                      cursor: 'pointer', fontFamily: T.font.sans,
+                    }}
+                  >取消</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 金額 */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8 }}>金額</div>
+            <input
+              type="text"
+              inputMode="decimal"
+              aria-label="金額"
+              value={draft.amount === 0 ? '' : String(draft.amount)}
+              onChange={e => update({ amount: Math.max(0, Number(e.target.value) || 0) })}
+              placeholder="0"
+              style={{
+                width: '100%', padding: '12px 14px', borderRadius: T.r.md,
+                border: `1.5px solid ${T.hairline}`,
+                fontSize: 20, fontWeight: 800, color: T.ink,
+                background: T.bg, outline: 'none', fontFamily: T.font.num,
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+
+          {/* 備註（選填） */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8 }}>備註</div>
+            <input
+              value={draft.note}
+              onChange={e => update({ note: e.target.value })}
+              placeholder="選填"
+              aria-label="備註"
+              style={{
+                width: '100%', padding: '12px 14px', borderRadius: T.r.md,
+                border: `1.5px solid ${T.hairline}`,
+                fontSize: 14, fontWeight: 600, color: T.ink,
+                background: T.bg, outline: 'none', fontFamily: T.font.sans,
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+
+          {/* 日期 */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8 }}>日期</div>
+            <input
+              type="date"
+              value={draft.d}
+              onChange={e => update({ d: e.target.value })}
+              aria-label="日期"
+              style={{
+                width: '100%', padding: '12px 14px', borderRadius: T.r.md,
+                border: `1.5px solid ${T.hairline}`,
+                fontSize: 14, fontWeight: 700, color: T.ink,
+                background: T.bg, outline: 'none', fontFamily: T.font.sans,
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+
+        </div>
+
+        {/* 固定底部按鈕區 — 永遠可見，不受捲動影響 */}
+        <div style={{ padding: '12px 20px 0', borderTop: `1px solid ${T.hairline}`, display: 'flex', gap: 10 }}>
+          {!isNew && (
+            <button
+              onClick={() => setConfirmingDelete(true)}
+              aria-label="刪除交易"
+              style={{
+                flex: 1, padding: '14px 0', borderRadius: T.r.md, border: 'none',
+                background: T.coralSoft, color: T.coralInk,
+                fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: T.font.sans,
+              }}
+            >刪除</button>
+          )}
+          {isNew && (
+            <button
+              onClick={() => save(true)}
+              disabled={!canSave}
+              aria-label="儲存並繼續"
+              style={{
+                flex: 1, padding: '14px 0', borderRadius: T.r.md, border: 'none',
+                background: canSave ? T.bg : '#EAEAEF',
+                color: canSave ? T.ink2 : T.muted,
+                fontSize: 13, fontWeight: 800, cursor: canSave ? 'pointer' : 'default',
+                fontFamily: T.font.sans, transition: 'background 150ms',
+              }}
+            >儲存並繼續</button>
+          )}
+          <button
+            onClick={() => save(false)}
+            disabled={!canSave}
+            aria-label="儲存"
+            style={{
+              flex: 2, padding: '14px 0', borderRadius: T.r.md, border: 'none',
+              background: canSave ? T.ink : '#D8D9E0',
+              color: '#fff',
+              fontSize: 14, fontWeight: 800, cursor: canSave ? 'pointer' : 'default',
+              fontFamily: T.font.sans, transition: 'background 150ms',
+            }}
+          >儲存</button>
+        </div>
+      </div>
+
+      {/* 刪除二次確認小視窗：蓋在 Sheet 之上，確認後才軟刪除並同步從雲端移除 */}
+      {confirmingDelete && (
+        <div
+          onClick={() => setConfirmingDelete(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 200,
+            background: 'rgba(26,27,37,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32,
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-label="確認刪除交易"
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: T.card, borderRadius: 20, padding: '24px 20px',
+              maxWidth: 300, width: '100%', textAlign: 'center',
+              boxShadow: '0 12px 48px rgba(0,0,0,0.3)',
+              display: 'flex', flexDirection: 'column', gap: 8,
+            }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>確定要刪除這筆交易嗎？</div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: T.muted, lineHeight: 1.6 }}>
+              刪除後會同步從雲端試算表移除，無法復原。
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              <button
+                onClick={() => setConfirmingDelete(false)}
+                aria-label="取消刪除"
+                style={{
+                  flex: 1, padding: '12px 0', borderRadius: T.r.md, border: 'none',
+                  background: T.bg, color: T.ink2,
+                  fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: T.font.sans,
+                }}
+              >取消</button>
+              <button
+                onClick={remove}
+                aria-label="確認刪除"
+                style={{
+                  flex: 1, padding: '12px 0', borderRadius: T.r.md, border: 'none',
+                  background: T.coral, color: '#fff',
+                  fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: T.font.sans,
+                }}
+              >刪除</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}

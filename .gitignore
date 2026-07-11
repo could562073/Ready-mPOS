@@ -65,3 +65,7 @@ test-results/
 
 # ===== Claude Code worktrees =====
 .claude/worktrees/
+
+# ===== 本機工具設定（每台裝置各異，不入版控） =====
+.claude/settings.local.json
+.serena/
