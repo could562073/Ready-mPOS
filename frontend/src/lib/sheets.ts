@@ -507,17 +507,20 @@ export async function backupSpreadsheet(spreadsheetId: string): Promise<string> 
   return backupId
 }
 
-// 讀所有月份分頁 → 交易 seeds；同時回報哪些分頁仍是舊格式（需改寫）
+// 讀所有月份分頁 → 交易 seeds；同時回報哪些分頁仍是舊彙總格式（需備份後改寫），
+// 以及哪些是缺「一級ID」欄的 2.0.0 新格式（需就地升級改寫補 ID 欄——改名防護，無需備份）
 export async function pullAllTransactionsFromSheets(
   spreadsheetId: string, categories: Category[],
-): Promise<{ seeds: TxSeed[]; oldFormatMonths: string[] }> {
+): Promise<{ seeds: TxSeed[]; oldFormatMonths: string[]; upgradeMonths: string[] }> {
   const token = await acquireToken()
   const titles = await getSheetTitles(spreadsheetId, token)
   const monthTabs = titles.filter(t => /^\d{4}-\d{2}$/.test(t))
   const catByName = new Map(categories.map(c => [c.name, c]))
+  const catById = new Map(categories.map(c => [c.id, c]))
   const now = new Date().toISOString()
   const seeds: TxSeed[] = []
   const oldFormatMonths: string[] = []
+  const upgradeMonths: string[] = []
 
   for (const month of monthTabs) {
     const data = await sheetsGet<{ values?: string[][] }>(
@@ -528,8 +531,9 @@ export async function pullAllTransactionsFromSheets(
     const header = rows[0]
 
     if (isNewTxFormat(header)) {
+      if (!header.includes('一級ID')) upgradeMonths.push(month)
       for (const row of rows.slice(1)) {
-        const seed = rowToTx(row, header, catByName, now)
+        const seed = rowToTx(row, header, catByName, catById, now)
         if (seed) seeds.push(seed)
       }
     } else {
@@ -540,7 +544,7 @@ export async function pullAllTransactionsFromSheets(
       }
     }
   }
-  return { seeds, oldFormatMonths }
+  return { seeds, oldFormatMonths, upgradeMonths }
 }
 
 // 將某月所有交易以新格式整批覆蓋寫入（先 clear 再 put，天然去除筆數變動殘留）
