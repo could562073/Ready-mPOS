@@ -4,7 +4,7 @@
 
 > **架構**：純前端 PWA，無後端伺服器。IndexedDB 離線儲存 + Google Sheets 雲端同步。
 >
-> **版本**：`2.0.0`（SemVer；逐筆交易資料模型大改→MAJOR 2，2026-07-11 cutover 併 main、tag `v2.0.0`）。版本號單一事實來源＝`frontend/package.json`，設定頁底部顯示。
+> **版本**：`2.0.1`（SemVer；2.0.1 hotfix = 類別改名同步修正，Sheets 列加一級ID/二級ID關聯鍵）。版本號單一事實來源＝`frontend/package.json`，設定頁底部顯示。
 
 ## Tech Stack
 

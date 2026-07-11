@@ -2,7 +2,7 @@
 
 > **Documentation Version**: 2.0
 > **Last Updated**: 2026-07-11
-> **App Version**: 2.0.0（見下方「版本號規則」）
+> **App Version**: 2.0.1（見下方「版本號規則」）
 > **Project**: Ready-mPOS
 > **Description**: 店家記帳系統 — 給餐廳/咖啡廳老闆用的記帳 App，解決手寫記帳本的核心痛點
 > **Features**: Offline-first PWA, Google Sheets sync, dynamic categories, push notifications, GitHub Pages deployment
@@ -182,7 +182,8 @@ Ready-mPOS/
 - ✅ **Dashboard / 月結已於 Phase 7 改讀 `transactions`**（經 `buildDailyRecordsFromTx` 合成 `DailyRecord`，見下方 Phase 7 說明）；帳目頁月曆與落地頁見下方 Phase 6。雲端同步已於 Phase 5 切換到 `transactions`（見下方）。
 
 ### 逐筆交易雲端同步（第 2 次優化 Phase 5）
-- `lib/txSheets.ts`（純函式，Vitest 覆蓋）：`TX_MONTH_HEADERS` 固定 7 欄表頭 `日期|收支|一級類別|二級類別|金額|備註|id`（不隨類別增減變動）；`isNewTxFormat` 偵測月份分頁是否已是新格式；`txToRow`/`rowToTx` 單筆轉換；`mergeTransactionsById` 以 `Transaction.id` 去重合併（本機 `PENDING` 優先於雲端版本）。
+- `lib/txSheets.ts`（純函式，Vitest 覆蓋）：`TX_MONTH_HEADERS` 固定 9 欄表頭 `日期|收支|一級類別|二級類別|金額|備註|id|一級ID|二級ID`（不隨類別增減變動）；`isNewTxFormat` 偵測月份分頁是否已是新格式；`txToRow`/`rowToTx` 單筆轉換；`mergeTransactionsById` 以 `Transaction.id` 去重合併（本機 `PENDING` 優先於雲端版本）。
+- **類別關聯鍵 = ID 欄（2.0.1 hotfix）**：2.0.0 的 7 欄格式只存類別**名稱**，類別改名後雲端列對不回 → pull 退化成未知類別字串並覆蓋本機 SYNCED 交易（正式站踩到）。修正：加 `一級ID|二級ID` 欄為機器關聯鍵（名稱欄降級為純顯示），`rowToTx` 優先用 ID 欄、空 ID 退回名稱對照（相容 7 欄舊列與手動補列）；`txToRow` 只在 categoryId 可解析時寫一級ID（未解析字串留白，名稱恢復時可靠名稱重連）；pull 偵測缺 `一級ID` 欄的月份回報 `upgradeMonths`，併入待改寫月份就地補欄（加欄改寫不走舊格式備份門檻）。
 - `lib/sheets.ts`：`pullAllTransactionsFromSheets` 逐月偵測格式——新格式直接讀；舊彙總格式用抽出的純函式 `parseOldMonthRows` + `explodeDailyRecord` 就地拆成交易，並標記該月待改寫。`syncMonthTransactionsToSheets` 對新格式月份 `values:clear` + 整表覆蓋寫回。`backupSpreadsheet` 在改寫任何舊格式分頁前建立時間戳備份：**Sheets API 匯出**（逐分頁讀值寫入新建備份表，走既有 `spreadsheets` scope）——原 Drive `files.copy` 方案因 `drive.file` scope 只授權 app 自建檔案、對既有表 403 `appNotAuthorizedToFile` 而棄用，`drive.file` 已自 `SCOPES` 移除。
 - **資料保護紅線**：舊格式分頁改寫前必先 `backupSpreadsheet` 成功；備份失敗則該輪同步**跳過所有舊格式分頁改寫**（即使該月同時有本機 `PENDING` 待寫也不改寫，等下次同步重試）。
 - `hooks/useSyncService.ts`：`syncAll`/`restoreFromSheets`/`clearLocalData` 已改讀寫 `db.transactions`（以 id 去重對帳，本機 `PENDING` 優先）。

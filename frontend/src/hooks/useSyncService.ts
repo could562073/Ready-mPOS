@@ -151,7 +151,7 @@ export function useSyncService() {
 
       // ── Pull：Sheets → 本機 transactions（以 Transaction.id 去重對帳） ──
       // SYNCED 交易以雲端為主；PENDING 本機修改優先，不覆蓋（mergeTransactionsById 已處理判斷）
-      const { seeds, oldFormatMonths } = await pullAllTransactionsFromSheets(sheetId, categories)
+      const { seeds, oldFormatMonths, upgradeMonths } = await pullAllTransactionsFromSheets(sheetId, categories)
       const localTx = await db.transactions.toArray()
       const plan = mergeTransactionsById(localTx, seeds)
       if (plan.toAdd.length) await db.transactions.bulkAdd(plan.toAdd)
@@ -189,6 +189,9 @@ export function useSyncService() {
       const monthsToRewrite = new Set<string>()
       for (const m of pendingMonths) if (allowOldRewrite || !oldSet.has(m)) monthsToRewrite.add(m)
       if (allowOldRewrite) for (const m of oldSet) monthsToRewrite.add(m)
+      // 缺「一級ID」欄的 2.0.0 新格式月份 → 就地升級改寫補 ID 欄（改名防護）。
+      // 內容已是逐筆格式、以 id 合併對帳完成，屬加欄改寫，不走舊格式的備份門檻
+      for (const m of upgradeMonths) monthsToRewrite.add(m)
 
       let rewriteIdx = 0
       for (const month of monthsToRewrite) {
