@@ -4,7 +4,7 @@
 
 > **架構**：純前端 PWA，無後端伺服器。IndexedDB 離線儲存 + Google Sheets 雲端同步。
 >
-> **版本**：`2.0.0-beta.1`（SemVer；逐筆交易資料模型大改→MAJOR 2，cutover 前為 beta）。版本號單一事實來源＝`frontend/package.json`，設定頁底部顯示。
+> **版本**：`2.0.0`（SemVer；逐筆交易資料模型大改→MAJOR 2，2026-07-11 cutover 併 main、tag `v2.0.0`）。版本號單一事實來源＝`frontend/package.json`，設定頁底部顯示。
 
 ## Tech Stack
 
@@ -256,7 +256,7 @@ Ready-mPOS/
 - **刻意保留的定義差異**：月曆（Phase 6）每日淨額為**毛額**（收入−支出，不扣手續費），Dashboard Hero「今日淨額」為**扣手續費後**淨額——用途不同（月曆看全月概況、Hero 看當日實收），評估後不強行統一
 - Playwright E2E 覆蓋：帳目用 FAB 新增一筆今日收入 → 首頁今日淨額 Hero 反映該筆 → 月結本月總收入含該筆
 
-第 2 次優化（逐筆交易改造）至此 **Phase 1–7 全部完成**。cutover（併回 `main`、切換正式試算表、對真實使用者資料執行遷移）為使用者核准的硬停，尚未執行。
+第 2 次優化（逐筆交易改造）至此 **Phase 1–7 全部完成**。cutover 已於 2026-07-11 執行（使用者核准）：併回 `main` + tag `v2.0.0`，正式站 production build 自動採用正式表名，真實資料由自動遷移（備份→改寫→阻擋層）處理。
 
 ## Git 分支流程
 

@@ -125,9 +125,7 @@ export function useSyncService() {
   }, [])
 
   const syncAll = useCallback(async () => {
-    // 診斷：確認 syncAll 是否被呼叫，以及若提前返回是卡在哪個條件（返回使用者遷移未觸發時用）
-    // sheetId 有效性延到取得 token 後、於 ensureValidSpreadsheet 檢查（垃圾桶/刪除自我修復），此處不再擋
-    console.log(`[sync-diag] syncAll() 被呼叫｜locked=${lockRef.current} online=${navigator.onLine} email=${getSignedInEmail() ? '有' : '無'}`)
+    // sheetId 有效性延到取得 token 後、於 ensureValidSpreadsheet 檢查（垃圾桶/刪除自我修復），此處不擋
     if (lockRef.current || !navigator.onLine || !getSignedInEmail()) return
     lockRef.current = true
     setSyncing(true)
@@ -135,17 +133,11 @@ export function useSyncService() {
     try {
       // 🔴 自我修復：確認試算表指標仍有效（未被移到垃圾桶／刪除），無效則清除並重新解析（可能得到新 id）
       const sheetId = await ensureValidSpreadsheet()
-      if (!sheetId) {
-        console.log('[sync-diag] 無有效試算表可同步，略過（可能重新解析失敗）')
-        return
-      }
-      // ⚠️ 暫時同步診斷 log（verify 分支彩排用，併 main 前整段移除）——前綴 [sync-diag] 方便 Console 過濾
-      console.log(`[sync-diag] syncAll 開始，sheetId=${sheetId}`)
+      if (!sheetId) return
 
       // 若本機類別有未同步的修改，先推送雲端，再拉取
       // 避免「先拉取舊雲端 → 覆蓋本機編輯」的競態，並確保後續記錄推送使用正確的欄位
       if (isCategoriesDirty()) {
-        console.log('[sync-diag] 本機類別 dirty → 推送 _config')
         try {
           await pushConfigToSheets(sheetId, getCategories())
         } catch (err) {
@@ -156,14 +148,12 @@ export function useSyncService() {
       // 取得類別設定：優先從雲端 _config 拉取，fallback 用 localStorage
       const cloudCategories = await pullConfigFromSheets(sheetId)
       const categories = cloudCategories ?? getCategories()
-      console.log(`[sync-diag] _config 拉取=${cloudCategories ? '成功（用雲端）' : '(無/dirty 略過，用本機)'}，類別數=${categories.length}`)
 
       // ── Pull：Sheets → 本機 transactions（以 Transaction.id 去重對帳） ──
       // SYNCED 交易以雲端為主；PENDING 本機修改優先，不覆蓋（mergeTransactionsById 已處理判斷）
       const { seeds, oldFormatMonths } = await pullAllTransactionsFromSheets(sheetId, categories)
       const localTx = await db.transactions.toArray()
       const plan = mergeTransactionsById(localTx, seeds)
-      console.log(`[sync-diag] pull：雲端 seeds=${seeds.length} 筆，舊格式月份=[${oldFormatMonths.join(', ') || '無'}]｜本機原有=${localTx.length} 筆 → 對帳 新增=${plan.toAdd.length}、更新=${plan.toUpdate.length}`)
       if (plan.toAdd.length) await db.transactions.bulkAdd(plan.toAdd)
       for (const u of plan.toUpdate) await db.transactions.update(u.localId, u.seed)
 
@@ -185,13 +175,10 @@ export function useSyncService() {
       //    備份失敗則本輪不改寫舊格式分頁，但仍推送本機 PENDING 所在（新格式或不存在）的月份
       let allowOldRewrite = true
       if (oldSet.size > 0) {
-        console.log(`[sync-diag] 偵測到舊格式月份 [${[...oldSet].join(', ')}] → 改寫前先 Drive 備份…`)
         try {
-          const backupId = await backupSpreadsheet(sheetId)
-          console.log(`[sync-diag] 備份完成，備份檔 id=${backupId}（Drive 應多一張「Ready-mPOS 備份 …」）`)
+          await backupSpreadsheet(sheetId)
         } catch (err) {
           console.error('[sync] 備份失敗，本輪不改寫舊格式分頁：', err)
-          console.log('[sync-diag] ⚠️ 備份失敗 → 本輪跳過所有舊格式分頁改寫（原資料不動）')
           allowOldRewrite = false
         }
       }
@@ -202,7 +189,6 @@ export function useSyncService() {
       const monthsToRewrite = new Set<string>()
       for (const m of pendingMonths) if (allowOldRewrite || !oldSet.has(m)) monthsToRewrite.add(m)
       if (allowOldRewrite) for (const m of oldSet) monthsToRewrite.add(m)
-      console.log(`[sync-diag] 本機 PENDING=${pendingTx.length} 筆，需改寫月份=[${[...monthsToRewrite].join(', ') || '無'}]`)
 
       let rewriteIdx = 0
       for (const month of monthsToRewrite) {
@@ -212,7 +198,6 @@ export function useSyncService() {
         const monthTx = await db.transactions
           .filter(t => t.date.startsWith(month) && t.syncStatus !== 'DELETED')
           .sortBy('date')
-        console.log(`[sync-diag] 改寫 ${month}：${monthTx.length} 筆（不含已刪）→ 新格式寫回 Sheets`)
         await syncMonthTransactionsToSheets(sheetId, month, monthTx, categories)
         await Promise.all(
           monthTx
@@ -225,10 +210,8 @@ export function useSyncService() {
           .filter(t => t.date.startsWith(month) && t.syncStatus === 'DELETED')
           .delete()
       }
-      console.log('[sync-diag] syncAll 完成 ✓')
     } catch (err) {
       console.error('[sync] failed:', err)
-      console.error('[sync-diag] syncAll 中斷（見上方錯誤）')
     } finally {
       lockRef.current = false
       setSyncing(false)

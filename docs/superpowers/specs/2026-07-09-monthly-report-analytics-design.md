@@ -2,8 +2,8 @@
 
 > **Status**: 設計已核准（2026-07-09，方案 A + 公休規則定案）
 > **Scope**: 只動 `MonthlyReportPage` 與新增純函式/儲存模組；首頁（Dashboard）本期不動
-> **分支**: 沿用 `feature/line-item-transactions-redesign`（cutover 前工作都疊在此分支，避免分支疊分支；cutover 後新功能才依 Git 分支流程開獨立分支）
-> **版本**: 完成後 bump `2.0.0-beta.3`
+> **分支**: `feature/monthly-report-analytics`（cutover 已執行、`v2.0.0` 已併 main，本功能依 Git 分支流程從 main 開獨立分支）
+> **版本**: 完成後 bump `2.1.0`（向後相容新功能 → MINOR）
 
 ## 背景與需求（來自真實餐廳老闆）
 
