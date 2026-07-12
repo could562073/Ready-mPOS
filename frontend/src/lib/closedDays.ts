@@ -1,6 +1,9 @@
-// localStorage key
+// 公休日兩層規則（月結「未記帳日」檢查用）：
+//   weekly = 固定每週公休（0=週日…6=週六，設定頁勾選，永久排除）
+//   dates  = 臨時逐日標記（連假/臨時事件，月結漏記卡上點「標為公休」）
+// 儲存於 localStorage、本機不跨裝置同步——月結核對通常在單一主力機進行（見設計 spec）。
 const LS_WEEKLY = 'mpos_weekly_closed'
-const LS_DATES = 'mpos_closed_dates'
+const LS_DATES = 'mpos_closed_days'
 
 // 讀 localStorage，JSON parse 失敗時回退默認值
 function readJson<T>(key: string, fallback: T): T {
