@@ -4,6 +4,7 @@ import { fmt } from '../lib/fmt'
 import { Icon } from '../components/Icon'
 import { useMonthTransactions } from '../hooks/useTransactions'
 import { buildDailyRecordsFromTx } from '../lib/aggregate'
+import { comparisonRange, limitToDay, delta } from '../lib/monthReport'
 import { getCategories, calcFees } from '../lib/categories'
 import type { DailyRecord } from '../types'
 
@@ -188,6 +189,15 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
   const { transactions, loading } = useMonthTransactions(month)
   const records = buildDailyRecordsFromTx(transactions)
 
+  // 本地時區今天（比照 App.tsx toLocalDateString，避免 UTC 位移跨日）
+  const now = new Date()
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+  // 與上月比較：進行中月份用上月同期（1 號～同日），歷史月份用上月全月
+  const cmp = comparisonRange(month, todayStr)
+  const { transactions: prevMonthTxs } = useMonthTransactions(cmp.prevMonth)
+  const prevTxs = limitToDay(prevMonthTxs, cmp.prevMonth, cmp.endDay)
+
   const allCategories  = getCategories()
   const knownIncomeIds  = new Set(allCategories.filter(c => c.type === 'income').map(c => c.id))
   const knownExpenseIds = new Set(allCategories.filter(c => c.type === 'expense').map(c => c.id))
@@ -196,6 +206,15 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
   const totalFees      = records.reduce((s, r) => s + calcFees(r, allCategories), 0)
   const net           = totalIncome - totalExpense - totalFees
   const avgDaily      = records.length > 0 ? Math.round(net / records.length) : 0
+
+  // 上月基準淨額（同公式：收入 － 支出 － 手續費）；上月完全無資料則不顯示比較行
+  const prevRecords = buildDailyRecordsFromTx(prevTxs)
+  const prevNet =
+    prevRecords.reduce((s, r) => s + dayIncome(r, knownIncomeIds), 0) -
+    prevRecords.reduce((s, r) => s + dayExpense(r, knownExpenseIds), 0) -
+    prevRecords.reduce((s, r) => s + calcFees(r, allCategories), 0)
+  const netDelta = delta(net, prevNet)
+  const hasPrevData = prevRecords.length > 0
 
   return (
     <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -229,16 +248,6 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
             style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0, cursor: 'pointer' }}
           />
         </div>
-        {/* 匯出 stub */}
-        <button
-          style={{
-            width: 36, height: 36, borderRadius: 12,
-            background: T.card, border: 'none', boxShadow: T.shadow.card,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-          }}
-        >
-          <Icon name="receipt" size={16} stroke={2.4} color={T.ink2} />
-        </button>
       </div>
 
       {/* 本月淨額 Hero 卡 */}
@@ -263,6 +272,20 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
           <div style={{ fontSize: 38, fontWeight: 800, fontFamily: T.font.num, letterSpacing: -1, marginTop: 4 }}>
             {fmt(net, { plus: true, sign: true })}
           </div>
+          {hasPrevData && (
+            <div
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8,
+                padding: '4px 10px', borderRadius: 999, background: 'rgba(255,255,255,0.92)',
+                fontSize: 12, fontWeight: 800, fontFamily: T.font.num,
+                color: netDelta.diff >= 0 ? T.mintInk : T.coralInk, // 增=綠、減=紅
+              }}
+            >
+              vs {cmp.mode === 'same-period' ? '上月同期' : '上月'}
+              {' '}{fmt(netDelta.diff, { plus: true, sign: true })}
+              {netDelta.pct !== null && `（${netDelta.pct >= 0 ? '+' : ''}${netDelta.pct}%）`}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
             {[
               { label: '總收入', value: fmt(totalIncome)  },
