@@ -23,6 +23,10 @@ describe('每週公休（weekly）', () => {
     store.set('mpos_weekly_closed', '{oops')
     expect(getWeeklyClosed()).toEqual([])
   })
+  it('合法 JSON 但形狀錯誤（非陣列）時回退為空陣列', () => {
+    store.set('mpos_weekly_closed', '{}')
+    expect(getWeeklyClosed()).toEqual([])
+  })
 })
 
 describe('臨時公休（dates）', () => {
@@ -37,5 +41,9 @@ describe('臨時公休（dates）', () => {
     markClosed('2026-07-18')
     unmarkClosed('2026-07-02')
     expect(getClosedDates()).toEqual(['2026-07-18'])
+  })
+  it('合法 JSON 但形狀錯誤（非陣列）時回退為空陣列', () => {
+    store.set('mpos_closed_days', '"oops"')
+    expect(getClosedDates()).toEqual([])
   })
 })

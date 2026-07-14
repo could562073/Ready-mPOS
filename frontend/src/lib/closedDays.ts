@@ -8,7 +8,10 @@ const LS_DATES = 'mpos_closed_days'
 // 讀 localStorage，JSON parse 失敗時回退默認值
 function readJson<T>(key: string, fallback: T): T {
   try {
-    return JSON.parse(localStorage.getItem(key) ?? '') as T
+    const parsed = JSON.parse(localStorage.getItem(key) ?? '')
+    // 非陣列一律回退，防止毀損資料（如合法 JSON 但形狀錯誤：'{}'、'5'）拖垮月結頁
+    if (!Array.isArray(parsed)) return fallback
+    return parsed as T
   } catch {
     return fallback
   }

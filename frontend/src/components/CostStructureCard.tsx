@@ -51,12 +51,15 @@ export function CostStructureCard({ txs, prevTxs, categories, totalIncome }: {
             return (
               <div key={r.categoryId}>
                 <div
-                  role="button"
-                  tabIndex={0}
-                  aria-expanded={open}
-                  aria-label={`${cat.name} 細目`}
+                  {...(hasSubs
+                    ? { role: 'button', tabIndex: 0, 'aria-expanded': open, 'aria-label': `${cat.name} 細目` }
+                    : {})}
                   onClick={() => hasSubs && setExpanded(open ? null : r.categoryId)}
-                  onKeyDown={e => { if (e.key === 'Enter' && hasSubs) setExpanded(open ? null : r.categoryId) }}
+                  onKeyDown={e => {
+                    if (!hasSubs) return
+                    if (e.key === ' ') e.preventDefault() // 防止 Space 觸發頁面捲動
+                    if (e.key === 'Enter' || e.key === ' ') setExpanded(open ? null : r.categoryId)
+                  }}
                   style={{ cursor: hasSubs ? 'pointer' : 'default' }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, alignItems: 'baseline' }}>
