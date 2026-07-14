@@ -3,6 +3,7 @@ import { T } from '../lib/tokens'
 import { Icon } from '../components/Icon'
 import { db } from '../db'
 import { getPermission, requestPermission, sendReminderToSW } from '../lib/notification'
+import { getWeeklyClosed, setWeeklyClosed } from '../lib/closedDays'
 
 interface Props {
   syncing: boolean
@@ -114,6 +115,16 @@ export function SettingsPage({
   const [draftName,      setDraftName]      = useState('')
   const [draftOwner,     setDraftOwner]     = useState('')
   const [recordCount,    setRecordCount]    = useState(0)
+
+  // 每週公休日（0=週日…6=週六）；勾選的星期在月結「未記帳日」檢查中永久排除
+  const [weeklyClosed, setWeeklyClosedState] = useState<number[]>(() => getWeeklyClosed())
+  const toggleWeekday = (day: number) => {
+    const next = weeklyClosed.includes(day)
+      ? weeklyClosed.filter(d => d !== day)
+      : [...weeklyClosed, day]
+    setWeeklyClosed(next)          // 寫 localStorage
+    setWeeklyClosedState(getWeeklyClosed()) // 讀回（已去重排序）
+  }
 
   useEffect(() => {
     db.dailyRecords.count().then(setRecordCount)
@@ -359,6 +370,32 @@ export function SettingsPage({
               )}
             </div>
           )}
+          {/* 每週公休日：勾選的星期在月結「未記帳日」檢查中自動排除（臨時公休在月結漏記卡逐日標） */}
+          <div style={{ padding: '12px 16px', borderTop: `1px solid ${T.hairline}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>每週公休日</span>
+              <span style={{ fontSize: 11, color: T.muted, fontWeight: 600 }}>不列入月結漏記檢查</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {['日', '一', '二', '三', '四', '五', '六'].map((label, i) => {
+                const on = weeklyClosed.includes(i)
+                return (
+                  <button
+                    key={i}
+                    onClick={() => toggleWeekday(i)}
+                    aria-label={`週${label}公休`}
+                    aria-pressed={on}
+                    style={{
+                      flex: 1, padding: '8px 0', borderRadius: 10, border: 'none', cursor: 'pointer',
+                      fontFamily: T.font.sans, fontSize: 13, fontWeight: 800,
+                      background: on ? T.ink : T.bg, color: on ? '#fff' : T.ink2,
+                      transition: 'all 140ms ease',
+                    }}
+                  >{label}</button>
+                )
+              })}
+            </div>
+          </div>
         </div>
       </div>
 
