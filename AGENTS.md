@@ -2,7 +2,7 @@
 
 > **Documentation Version**: 2.0
 > **Last Updated**: 2026-07-11
-> **App Version**: 2.0.1（見下方「版本號規則」）
+> **App Version**: 2.1.0（見下方「版本號規則」）
 > **Project**: Ready-mPOS
 > **Description**: 店家記帳系統 — 給餐廳/咖啡廳老闆用的記帳 App，解決手寫記帳本的核心痛點
 > **Features**: Offline-first PWA, Google Sheets sync, dynamic categories, push notifications, GitHub Pages deployment
@@ -72,7 +72,8 @@ Before starting any task:
 - **PATCH**：修正與小調整（bug fix、文案、樣式）。
 - **預發布**：尚未上正式資料的大改在合併前掛 `-beta.N` 尾碼（本次逐筆交易改造 cutover 前即為 `2.0.0-beta.1/2`）。
 
-**目前 = `2.0.0`**（2026-07-11 cutover 併 main、tag `v2.0.0`）：逐筆交易是資料模型大改 → MAJOR 進位到 2。
+**目前 = `2.1.0`**（月結分析對帳報表 → MINOR）。
+2026-07-11 cutover 併 main、tag `v2.0.0`：逐筆交易是資料模型大改 → MAJOR 進位到 2。
 其後功能→bump MINOR、修正→bump PATCH。
 
 ---
@@ -124,6 +125,8 @@ Ready-mPOS/
 │       │   ├── Icon.tsx               # Lucide-style SVG icon
 │       │   ├── TransactionSheet.tsx   # 交易記帳底部 Sheet（收支/類別/二級/金額/儲存並繼續，Phase 4）
 │       │   ├── MonthCalendar.tsx       # 帳目頁月曆元件（每日淨額格/切月/點日，Phase 6）
+│       │   ├── MissingDaysCard.tsx    # 月結未記帳日提示卡（固定週公休+臨時標記，2.1.0）
+│       │   ├── CostStructureCard.tsx  # 月結成本結構卡（二級細目/佔收入比/vs 上月，2.1.0）
 │       │   └── CategoryEditSheet.tsx  # 類別新增/編輯底部 Sheet（共用）
 │       ├── lib/
 │       │   ├── sheets.ts              # Google Sheets API + GIS OAuth2
@@ -137,6 +140,8 @@ Ready-mPOS/
 │       │   ├── txSheets.ts            # 逐筆交易⇄Sheets 列轉換、新舊格式偵測、id 對帳（純函式，Phase 5）
 │       │   ├── calendar.ts            # 月曆：月份日期矩陣 / 每日淨額 / 切月（純函式，Phase 6）
 │       │   ├── aggregate.ts           # buildDailyRecordsFromTx：交易→合成 DailyRecord（純函式，Phase 7）
+│       │   ├── closedDays.ts          # 公休日儲存層：固定週公休 + 臨時逐日標記（localStorage，2.1.0）
+│       │   ├── monthReport.ts         # 月結分析純函式：漏記日/上月比較區間/類別二級彙總（2.1.0）
 │       │   ├── subMemory.ts           # 記「每個一級上次用的二級」（localStorage）
 │       │   └── transactions.ts        # 逐筆交易 CRUD（add / update / delete）
 │       ├── db/
@@ -189,6 +194,7 @@ Ready-mPOS/
 - `hooks/useSyncService.ts`：`syncAll`/`restoreFromSheets`/`clearLocalData` 已改讀寫 `db.transactions`（以 id 去重對帳，本機 `PENDING` 優先）。
 - **刪除同步 = 軟刪除墓碑（2026-07-09 修正）**：`deleteTransaction` 改標 `syncStatus='DELETED'`（不硬刪）——硬刪會讓雲端列永不移除、且下次 pull 對帳把該列當新資料「復活」加回。機制：畫面查詢（`useDay/useMonthTransactions`）過濾墓碑；`syncAll` 待改寫月份含 `DELETED`，寫回時排除墓碑列（整月 clear+覆蓋 → 雲端該列消失），**寫回成功後才真正清除墓碑**（失敗保留、下次重試）；墓碑存在期間 merge 不 toAdd 也不覆蓋（Vitest 鎖定）。**儲存/刪除後自動同步**：`App → LedgerPage → TransactionSheet` 的 `onSync`（=`syncAll`）在每次成功寫入後觸發（修 Phase 4 換頁漏接「儲存後即時同步」）；刪除有二次確認小視窗。
 - ✅ **cutover 交易重複已解決（Task 6）**：`explodeDailyRecord` 現採決定性 id `mpos:<date>:<type>:<categoryId>`，本機 v3 upgrade 時產生的 id 與雲端 pull 時 re-explode 同一批舊資料產生的 id 完全相同，`mergeTransactionsById` 可正確辨識並去重，cutover 首次同步不再發生重複。此修正自動套用於新安裝及 v3 upgrade 過程（upgrade 僅執行一次）；在此修正前已於 dev 分支跑過舊版遷移的裝置，其本機交易仍為舊隨機 id，可使用 `restoreFromSheets`（覆蓋本機）或 `clearLocalData`（重置）重新同步。cutover 已於 2026-07-11 執行（併 main + tag `v2.0.0`）；表名 env 化，dev/staging 自動連測試表、production build 自動連正式表（見「Git 分支流程」）。
+- **月結分析對帳報表（2.1.0）**: ✅ 月結頁原地強化——未記帳日卡（設定頁固定週公休 + 臨時逐日標記，`lib/closedDays.ts`）、成本結構卡（二級細目展開/支出佔收入比/vs 上月增減，`CostStructureCard`）、Hero vs 上月淨額（進行中=同期、歷史=全月，`lib/monthReport.ts` 純函式）、移除匯出 stub。spec：`docs/superpowers/specs/2026-07-09-monthly-report-analytics-design.md`。
 
 ### 帳目頁月曆 + 落地頁（第 2 次優化 Phase 6）
 - `lib/calendar.ts`（純函式，Vitest 覆蓋）：`buildMonthMatrix('YYYY-MM')` 產生週列陣列（每列 7 格、`'YYYY-MM-DD'` 或 `null` 補白、週日為每週第一天）；`monthDayNets(txs)` 算 date→當日淨額（`Σ收入 − Σ支出`，**不扣手續費**——Phase 7 已評估並刻意保留此差異，見下方 Phase 7 說明）；`shiftMonth(month, delta)` 跨年切月。

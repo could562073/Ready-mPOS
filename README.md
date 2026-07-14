@@ -4,7 +4,7 @@
 
 > **架構**：純前端 PWA，無後端伺服器。IndexedDB 離線儲存 + Google Sheets 雲端同步。
 >
-> **版本**：`2.0.1`（SemVer；2.0.1 hotfix = 類別改名同步修正，Sheets 列加一級ID/二級ID關聯鍵）。版本號單一事實來源＝`frontend/package.json`，設定頁底部顯示。
+> **版本**：`2.1.0`（SemVer；2.1.0 = 月結分析對帳報表——未記帳日卡/成本結構卡/Hero 上月比較）。版本號單一事實來源＝`frontend/package.json`，設定頁底部顯示。
 
 ## Tech Stack
 
@@ -62,6 +62,7 @@ Ready-mPOS/
 | 打烊提醒推播通知（自訂時間，Service Worker） | ✅ |
 | GitHub Pages 自動部署 | ✅ |
 | 逐筆交易模型 + 月曆列表主畫面 + 二級分類（第 2 次優化） | ✅ 完成（Phase 1–7）：資料層／二級分類／記帳 UI／雲端同步／月曆落地頁／Dashboard・月結改用交易重算 |
+| 月結分析對帳（未記帳日/成本結構/上月比較） | ✅ |
 
 ## Google Sheets 同步
 
