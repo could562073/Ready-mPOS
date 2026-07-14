@@ -116,78 +116,30 @@ export function sumByCategoryAndSub(
   categories: Category[],
   type: 'income' | 'expense',
 ): CatSubBreakdown[] {
-  // 先按交易類別過濾
-  const filtered = txs.filter(t => t.type === type)
-
-  // 建立 Category 索引與 Sub 索引
+  // 建立 Category 索引
   const catById = new Map(categories.map(c => [c.id, c]))
 
-  // 依 categoryId group by，並依 subId 再細分
-  // { categoryId -> { subId -> amount } }
-  const catSubAmounts: Record<string, Record<string, number>> = {}
-
-  for (const tx of filtered) {
-    if (!catSubAmounts[tx.categoryId]) {
-      catSubAmounts[tx.categoryId] = {}
-    }
-
-    // 決定 subId：若 subId 無效（不在該類別 subs 裡），視為 null
-    const category = catById.get(tx.categoryId)
-    let resolvedSubId: string | null = null
-
-    if (tx.subId && category?.subs) {
-      const subExists = category.subs.some(s => s.id === tx.subId)
-      if (subExists) {
-        resolvedSubId = tx.subId
-      }
-    }
-
-    // 用 null 代表「無二級」或「失效 subId」
-    const key = resolvedSubId ?? 'null'
-    catSubAmounts[tx.categoryId][key] = (catSubAmounts[tx.categoryId][key] ?? 0) + tx.amount
+  // 累積至 Map<categoryId, Map<subLabel, amount>>
+  // 無 subId 或 dangling subId 的 label 一律歸「（未分類）」
+  const acc = new Map<string, Map<string, number>>() // categoryId → subLabel → amount
+  for (const t of txs) {
+    if (t.type !== type) continue
+    const cat = catById.get(t.categoryId)
+    // 找不到二級名稱（無 subId 或 dangling）一律歸（未分類），不丟資料
+    const label = (t.subId ? cat?.subs?.find(s => s.id === t.subId)?.name : undefined) ?? '（未分類）'
+    const bySub = acc.get(t.categoryId) ?? new Map<string, number>()
+    bySub.set(label, (bySub.get(label) ?? 0) + t.amount)
+    acc.set(t.categoryId, bySub)
   }
 
-  // 轉換為 CatSubBreakdown[]，並依 total 降冪排序
-  const results: CatSubBreakdown[] = []
-
-  for (const [categoryId, subMap] of Object.entries(catSubAmounts)) {
-    const subs: { label: string; amount: number }[] = []
-    let unclassifiedAmount = 0
-
-    const category = catById.get(categoryId)
-
-    for (const [subIdKey, amount] of Object.entries(subMap)) {
-      if (subIdKey === 'null') {
-        // 無二級或失效 subId → 併入「（未分類）」
-        unclassifiedAmount += amount
-      } else {
-        // 查詢二級名稱
-        const subName = category?.subs?.find(s => s.id === subIdKey)?.name ?? subIdKey
-        subs.push({ label: subName, amount })
-      }
-    }
-
-    // 「（未分類）」放在最後
-    if (unclassifiedAmount > 0) {
-      subs.push({ label: '（未分類）', amount: unclassifiedAmount })
-    } else if (subs.length === 0) {
-      // 沒有任何二級細目時，創建「（未分類）」項（金額為 0）
-      subs.push({ label: '（未分類）', amount: 0 })
-    }
-
-    // 降冪排序（「（未分類）」除外，固定在最後）
-    const classified = subs.slice(0, -1).sort((a, b) => b.amount - a.amount)
-    const unclassified = subs[subs.length - 1]
-
-    results.push({
+  // 轉換為 CatSubBreakdown[]，subs 依金額降冪、categories 依 total 降冪
+  return [...acc.entries()]
+    .map(([categoryId, bySub]) => ({
       categoryId,
-      total: Object.values(subMap).reduce((a, b) => a + b, 0),
-      subs: unclassified ? [...classified, unclassified] : classified,
-    })
-  }
-
-  // 依 total 降冪排序
-  results.sort((a, b) => b.total - a.total)
-
-  return results
+      total: [...bySub.values()].reduce((s, v) => s + v, 0),
+      subs: [...bySub.entries()]
+        .map(([label, amount]) => ({ label, amount }))
+        .sort((a, b) => b.amount - a.amount),
+    }))
+    .sort((a, b) => b.total - a.total)
 }

@@ -101,4 +101,33 @@ describe('sumByCategoryAndSub', () => {
     expect(sumByCategoryAndSub(txs, cats, 'expense')[0].subs)
       .toEqual([{ label: '（未分類）', amount: 120 }])
   })
+  it('三個二級都有交易、無未分類時，全表降冪排序', () => {
+    // 回歸測試：確保所有二級（非未分類）按金額降冪排序，不會因假設最後一個是未分類而排序出錯
+    const catWith3Subs = cat({
+      id: 'c3',
+      name: '雜支',
+      subs: [
+        { id: 's1', name: '瓦斯費' },
+        { id: 's2', name: '水電費' },
+        { id: 's3', name: '清潔費' },
+      ],
+    })
+    const txs = [
+      tx({ id: 'a', categoryId: 'c3', subId: 's1', amount: 100 }),
+      tx({ id: 'b', categoryId: 'c3', subId: 's2', amount: 300 }),
+      tx({ id: 'c', categoryId: 'c3', subId: 's3', amount: 200 }),
+    ]
+    const result = sumByCategoryAndSub(txs, [catWith3Subs], 'expense')
+    expect(result).toEqual([
+      {
+        categoryId: 'c3',
+        total: 600,
+        subs: [
+          { label: '水電費', amount: 300 },
+          { label: '清潔費', amount: 200 },
+          { label: '瓦斯費', amount: 100 },
+        ],
+      },
+    ])
+  })
 })
