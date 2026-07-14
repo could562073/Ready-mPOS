@@ -1,8 +1,8 @@
 # AGENTS.md - Ready-mPOS
 
 > **Documentation Version**: 2.0
-> **Last Updated**: 2026-07-11
-> **App Version**: 2.0.1（見下方「版本號規則」）
+> **Last Updated**: 2026-07-14
+> **App Version**: 2.1.0（見下方「版本號規則」）
 > **Project**: Ready-mPOS
 > **Description**: 店家記帳系統 — 給餐廳/咖啡廳老闆用的記帳 App，解決手寫記帳本的核心痛點
 > **Features**: Offline-first PWA, Google Sheets sync, dynamic categories, push notifications, GitHub Pages deployment
@@ -58,6 +58,7 @@ Before starting any task:
 - **Deployment**: ✅ GitHub Pages (自動 CI/CD on push to main)
 - **Backend**: ❌ Removed — 無後端伺服器，純前端架構
 - **第 2 次優化（Phase 1–7 全部完成）**: 逐筆交易改造 — **全部完成**（Task 6 cutover 重複修正含於 Phase 5）。Phase 1：`Transaction` 型別、Dexie v3 自動遷移、`explodeDailyRecord` 拆解純函式 + Vitest、交易 CRUD/hook。Phase 2：二級分類純函式 CRUD + `CategoryEditSheet` 管理 UI + E2E。Phase 3：二級經 Sheets `_config` 跨裝置同步（`serializeSubs`/`parseSubs`）+ 修 push/pull 資料流失 + feature 分支同步隔離到獨立測試試算表（原為手改常數，2026-07-09 起已 env 化，見「Git 分支流程」）。Phase 4：記帳改逐筆交易 — 「記帳」tab 換成 `LedgerPage`（單日列表 + 右下 FAB → `TransactionSheet` 記帳，選一級自動帶入 `defaultSubId`），寫入 `transactions` + Playwright E2E。Phase 5：逐筆交易雲端同步 — 月份分頁改為新格式（`日期|收支|一級|二級|金額|備註|id`，`lib/txSheets.ts` 純函式：`isNewTxFormat` 偵測、`txToRow`/`rowToTx`、`mergeTransactionsById` 以 id 去重對帳）；舊格式 pull 時就地 `explodeDailyRecord` 拆解並標記待改寫，改寫前必先 `backupSpreadsheet`（Sheets API 逐分頁匯出到新建時間戳備份表；原 Drive `files.copy`+`drive.file` 因 403 已棄用），備份失敗則本輪跳過所有舊格式改寫；`syncAll`/`restoreFromSheets` 已切換讀寫 `db.transactions`。**Task 6（cutover 交易重複修正）**：`explodeDailyRecord` 改用決定性 id（`mpos:<date>:<type>:<categoryId>`），本機遷移與雲端 re-explode 對同一批歷史資料產生相同 id → `mergeTransactionsById` 正確去重，cutover 首次同步不再重複；此修正自動套用於新安裝及 v3 upgrade（只跑一次）。**Phase 6**：「帳目」頁改為**月曆 + 單日逐筆列表**（`lib/calendar.ts` 純函式 + `MonthCalendar` 元件，每格顯示當日淨額 = 收入−支出、不扣手續費），App **落地頁與導覽首項改為「帳目」** + Playwright E2E。**Phase 7**：Dashboard／月結改用 `transactions` 重算 —— 新增 `lib/aggregate.ts` 的 `buildDailyRecordsFromTx` adapter 把逐筆交易合成 `DailyRecord`，讓兩頁既有的 `dayIncome/dayExpense/calcFees/TrendChart/CategoryBars` 邏輯零改動重用；Dashboard/月結不再 import `useDailyRecord`/`useMonthlyRecords` + Playwright E2E 驗證「帳目新增一筆 → 首頁/月結皆反映」。**cutover 已於 2026-07-11 執行**（使用者核准）：併 main + tag `v2.0.0`，正式站 production build 自動採用正式表名（env 化，dev/staging=測試表，見「Git 分支流程」），真實資料由自動遷移（備份→改寫→阻擋層）處理。開發分支為 `feature/line-item-transactions-redesign`（已併入）。設計 spec：`docs/superpowers/specs/2026-07-01-line-item-transactions-redesign-design.md`。
+- **月結分析對帳報表（2.1.0）**: ✅ 月結頁原地強化——未記帳日卡（設定頁固定週公休 + 臨時逐日標記，`lib/closedDays.ts`）、成本結構卡（二級細目展開/支出佔收入比/vs 上月增減，`CostStructureCard`）、Hero vs 上月淨額（進行中=同期、歷史=全月，`lib/monthReport.ts` 純函式）、移除匯出 stub。spec：`docs/superpowers/specs/2026-07-09-monthly-report-analytics-design.md`。
 
 ---
 
@@ -72,7 +73,8 @@ Before starting any task:
 - **PATCH**：修正與小調整（bug fix、文案、樣式）。
 - **預發布**：尚未上正式資料的大改在合併前掛 `-beta.N` 尾碼（本次逐筆交易改造 cutover 前即為 `2.0.0-beta.1/2`）。
 
-**目前 = `2.0.0`**（2026-07-11 cutover 併 main、tag `v2.0.0`）：逐筆交易是資料模型大改 → MAJOR 進位到 2。
+**目前 = `2.1.0`**（月結分析對帳報表 → MINOR）。
+2026-07-11 cutover 併 main、tag `v2.0.0`：逐筆交易是資料模型大改 → MAJOR 進位到 2。
 其後功能→bump MINOR、修正→bump PATCH。
 
 ---
@@ -124,6 +126,8 @@ Ready-mPOS/
 │       │   ├── Icon.tsx               # Lucide-style SVG icon
 │       │   ├── TransactionSheet.tsx   # 交易記帳底部 Sheet（收支/類別/二級/金額/儲存並繼續，Phase 4）
 │       │   ├── MonthCalendar.tsx       # 帳目頁月曆元件（每日淨額格/切月/點日，Phase 6）
+│       │   ├── MissingDaysCard.tsx    # 月結未記帳日提示卡（固定週公休+臨時標記，2.1.0）
+│       │   ├── CostStructureCard.tsx  # 月結成本結構卡（二級細目/佔收入比/vs 上月，2.1.0）
 │       │   └── CategoryEditSheet.tsx  # 類別新增/編輯底部 Sheet（共用）
 │       ├── lib/
 │       │   ├── sheets.ts              # Google Sheets API + GIS OAuth2
@@ -137,6 +141,8 @@ Ready-mPOS/
 │       │   ├── txSheets.ts            # 逐筆交易⇄Sheets 列轉換、新舊格式偵測、id 對帳（純函式，Phase 5）
 │       │   ├── calendar.ts            # 月曆：月份日期矩陣 / 每日淨額 / 切月（純函式，Phase 6）
 │       │   ├── aggregate.ts           # buildDailyRecordsFromTx：交易→合成 DailyRecord（純函式，Phase 7）
+│       │   ├── closedDays.ts          # 公休日儲存層：固定週公休 + 臨時逐日標記（localStorage，2.1.0）
+│       │   ├── monthReport.ts         # 月結分析純函式：漏記日/上月比較區間/類別二級彙總（2.1.0）
 │       │   ├── subMemory.ts           # 記「每個一級上次用的二級」（localStorage）
 │       │   └── transactions.ts        # 逐筆交易 CRUD（add / update / delete）
 │       ├── db/
