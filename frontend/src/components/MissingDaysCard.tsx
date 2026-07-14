@@ -2,7 +2,7 @@
 // 月結「未記帳日」提示卡——取代紙本月底逐日核對的漏記檢查。
 // 顯示規則：該月完全無交易（txDates 空）不顯示（避免用前史空月洗版）；
 // 無漏記且無臨時公休標記也不顯示（零干擾）；無漏記但有臨時標記時顯示瘦身版（可取消誤標）。
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { T } from '../lib/tokens'
 import { missingDays } from '../lib/monthReport'
 import { getWeeklyClosed, getClosedDates, markClosed, unmarkClosed } from '../lib/closedDays'
@@ -21,6 +21,13 @@ export function MissingDaysCard({ month, txDates, today, onGoToDate }: {
   const [closedVersion, setClosedVersion] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
   const [managing, setManaging] = useState(false)
+
+  // 切月時清掉選定日與管理展開狀態，避免動作列殘留上個月的日期
+  useEffect(() => {
+    setSelected(null)
+    setManaging(false)
+  }, [month])
+
   void closedVersion
 
   const weekly = getWeeklyClosed()
