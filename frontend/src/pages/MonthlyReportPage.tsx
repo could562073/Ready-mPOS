@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { T, colorMap } from '../lib/tokens'
 import { fmt } from '../lib/fmt'
 import { Icon } from '../components/Icon'
+import { MissingDaysCard } from '../components/MissingDaysCard'
 import { useMonthTransactions } from '../hooks/useTransactions'
 import { buildDailyRecordsFromTx } from '../lib/aggregate'
 import { comparisonRange, limitToDay, delta } from '../lib/monthReport'
@@ -300,6 +301,14 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
           </div>
         </div>
       </div>
+
+      {/* 未記帳日提示卡（無漏記且無臨時標記時整卡不渲染，零干擾） */}
+      <MissingDaysCard
+        month={month}
+        txDates={new Set(transactions.map(t => t.date))}
+        today={todayStr}
+        onGoToDate={onSelectDate}
+      />
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '48px 0', color: T.muted, fontSize: 14 }}>載入中⋯</div>
