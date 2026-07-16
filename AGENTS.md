@@ -205,8 +205,8 @@ Ready-mPOS/
 
 ### Dashboard/月結改用交易重算（第 2 次優化 Phase 7）
 - `lib/aggregate.ts` 的 `buildDailyRecordsFromTx(txs)`（純函式）把逐筆交易依 `date` group 成合成的 `DailyRecord[]`（`incomes`/`expenses` 為 categoryId→金額加總），讓 `DashboardPage`/`MonthlyReportPage` 既有的 `dayIncome`/`dayExpense`/`calcFees`/`TrendChart`/`CategoryBars` 等彙總與圖表邏輯**零改動**重用——兩頁改用 `useDayTransactions`/`useMonthTransactions` 取交易後餵給這個 adapter，不再 import `useDailyRecord`/`useMonthlyRecords`。
-- **月曆（Phase 6）與 Dashboard Hero（Phase 7）的每日淨額定義刻意保留差異**：`MonthCalendar` 每格顯示的當日淨額為**毛額**（`Σ收入 − Σ支出`，不扣外送手續費），Dashboard Hero「今日淨額」則為**扣手續費後**淨額（`todayNetAfterFees`）。兩者用途不同（月曆給一眼掃視全月概況、Hero 給當日實收），評估後決定不強行統一。
-- Playwright E2E（`e2e/transactions.spec.ts`）覆蓋：在「帳目」用 FAB 新增一筆今日收入後，切到「首頁」斷言今日淨額 Hero 反映該筆、切到「月結」斷言本月「總收入」含該筆——驗證兩頁確實從 `transactions` 重算而非讀舊快照（Dashboard 已於 2.2.0 移除，`buildDailyRecordsFromTx` 仍為月結所用）。
+- **月曆（Phase 6）與帳目頁小計卡（2.2.0）的每日淨額定義刻意保留差異**：`MonthCalendar` 每格顯示的當日淨額為**毛額**（`Σ收入 − Σ支出`，不扣外送手續費），帳目頁小計卡「淨額（扣分潤）」則為**扣手續費後**淨額（`lib/aggregate.ts` 的 `dayFeesFromTx`；原 Dashboard Hero 的 `todayNetAfterFees` 概念隨 2.2.0 移除首頁後搬到此卡）。兩者用途不同（月曆給一眼掃視全月概況、小計卡給當日實收），評估後決定不強行統一。
+- Playwright E2E（`e2e/transactions.spec.ts`）覆蓋：在「帳目」用 FAB 新增一筆今日收入後，斷言帳目頁小計「淨額（扣分潤）」卡與外送佔比洞察卡即時反映該筆、切到「月結」斷言本月「總收入」含該筆——驗證兩頁確實從 `transactions` 重算而非讀舊快照（Dashboard 已於 2.2.0 移除，`buildDailyRecordsFromTx` 仍為月結所用）。
 
 ### 類別系統（`lib/categories.ts`）
 - 類別儲存在 `localStorage`（key: `mpos_categories`）
@@ -216,10 +216,9 @@ Ready-mPOS/
 - `calcFees(record, categories)` — 計算單日總手續費
 - 類別變更後透過 `syncCategories` 同步到 Sheets `_config` tab
 
-### Dashboard 計算邏輯
-- `dayIncome(r, ids)` / `dayExpense(r, ids)` — 只加總已知類別 ID，防止 Sheets 同步帶入的陌生欄位污染金額
-- Hero 顯示 `todayNetAfterFees`（扣手續費後淨額），淨額為負時顯示紅色漸層
-- 首頁收入/支出列表：value = 0 的類別不顯示
+### 已知類別 ID 加總防污染（原「Dashboard 計算邏輯」，Dashboard 已於 2.2.0 移除）
+- `dayIncome(r, ids)` / `dayExpense(r, ids)` — 只加總已知類別 ID，防止 Sheets 同步帶入的陌生欄位污染金額；原 Dashboard 頁曾有同款邏輯，隨頁面刪除已不再由該頁使用，現僅由 `MonthlyReportPage.tsx` 本地定義沿用。
+- 原 Dashboard Hero「今日淨額（扣手續費後，`todayNetAfterFees`，負值紅色漸層）」與「收入/支出列表（value = 0 類別不顯示）」已隨 `DashboardPage.tsx` 於 2.2.0 一併移除；扣手續費後淨額改由帳目頁小計卡「淨額（扣分潤）」承接（見上方「移除首頁（2.2.0）」）。
 
 ### Google Auth（`lib/sheets.ts`）
 - Token 儲存在 `localStorage`（跨 session 持久化）
