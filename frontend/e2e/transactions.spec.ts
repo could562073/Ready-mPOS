@@ -5,8 +5,8 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
 // 以及帳目落地頁 + 月曆點日切換的行為。
 // 種子沿用 subcategories.spec 的預設類別陣列，額外讓「雜支」帶二級「瓦斯費」且設為預設，
 // 以驗證選定一級類別時 resolveDefaultSub 自動帶入的行為。
-// 另含 Phase 7 案例：在「帳目」FAB 新增交易後，切到「首頁」/「月結」斷言兩者皆經
-// buildDailyRecordsFromTx 重算並反映該筆（驗證 Dashboard/月結不再讀舊 DailyRecord 彙總表）。
+// 另含案例：在「帳目」FAB 新增交易後，斷言小計「淨額（扣分潤）」與洞察卡（帳目頁內），
+// 並切到「月結」斷言經 buildDailyRecordsFromTx 重算反映（2.2.0 起首頁已移除）。
 
 // 監聽頁面未捕捉例外（pageerror），收集起來供各測試斷言為空
 function collectPageErrors(page: Page): Error[] {
@@ -162,12 +162,12 @@ test('帳目為落地頁、月曆顯示當日淨額並可點日切換', async ({
   expect(errors).toEqual([])
 })
 
-test('Phase 7：帳目新增交易後，首頁與月結皆反映該筆（transactions 重算）', async ({ page }) => {
+test('帳目新增交易後，小計淨額（扣分潤）／洞察卡／月結皆反映（transactions 重算）', async ({ page }) => {
   const errors = collectPageErrors(page)
 
   await page.goto('/')
 
-  // 落地頁即「帳目」→ 用 FAB 新增一筆今日收入「現金 1234」（金額用好辨識的數字）
+  // 落地頁即「帳目」→ 用 FAB 新增一筆今日收入「現金 1234」（無手續費，金額用好辨識的數字）
   await page.getByRole('button', { name: '新增交易' }).click()
   await expect(page.getByText('新增交易').last()).toBeVisible()
   await page.getByRole('button', { name: '收入', exact: true }).click()
@@ -177,17 +177,36 @@ test('Phase 7：帳目新增交易後，首頁與月結皆反映該筆（transac
   await expect(page.getByText('新增交易').last()).toBeHidden()
   await expect(txRow(page, '現金', '1,234')).toBeVisible()
 
-  // 切到「首頁」→ 今日淨額 Hero（buildDailyRecordsFromTx 重算）反映該筆金額
-  await navTab(page, '首頁').click()
-  await expect(page.getByText('+$1,234').first()).toBeVisible()
+  // 小計三張卡（原首頁指標搬入帳目頁）：現金無手續費 → 淨額（扣分潤）= +$1,234
+  // 種子含 fee>0 類別（Uber Eats/foodpanda）→ label 帶「扣分潤」字樣
+  await expect(page.getByText('收入合計')).toBeVisible()
+  await expect(page.getByText('支出合計')).toBeVisible()
+  await expect(page.getByText('淨額（扣分潤）')).toBeVisible()
+  // 淨額卡的金額是 <div>，月曆當日格／交易列的金額則是 <span>（同樣精確文字「+$1,234」）
+  // → 用 tag 限定在 div 才能唯一鎖定小計卡，避免 strict mode violation
+  await expect(page.locator('div').filter({ hasText: /^\+\$1,234$/ })).toBeVisible()
+  // 外送佔比 0% → 洞察卡不出現
+  await expect(page.getByText('外送佔比偏高')).toHaveCount(0)
 
-  // 切到「月結」→ 本月「總收入」（同樣經 buildDailyRecordsFromTx 重算）含這筆 1234
+  // 再新增「Uber Eats 1000」（fee 30%）→ 淨額 = 2234 − 300 = +$1,934；
+  // 外送佔比 1000/2234 ≈ 45% > 40% → 洞察卡出現
+  await page.getByRole('button', { name: '新增交易' }).click()
+  await expect(page.getByText('新增交易').last()).toBeVisible()
+  await page.getByRole('button', { name: '收入', exact: true }).click()
+  await page.getByRole('button', { name: '類別 Uber Eats' }).click()
+  await page.getByLabel('金額', { exact: true }).fill('1000')
+  await page.getByRole('button', { name: '儲存', exact: true }).click()
+  await expect(page.getByText('新增交易').last()).toBeHidden()
+  await expect(page.locator('div').filter({ hasText: /^\+\$1,934$/ })).toBeVisible()
+  await expect(page.getByText('外送佔比偏高')).toBeVisible()
+
+  // 切到「月結」→ 本月「總收入」（經 buildDailyRecordsFromTx 重算）含 1234 + 1000 = $2,234
   await navTab(page, '月結').click()
   const totalIncomeStat = page.locator('div')
     .filter({ hasText: '總收入' })
     .filter({ hasNotText: '總支出' })
     .first()
-  await expect(totalIncomeStat).toContainText('$1,234')
+  await expect(totalIncomeStat).toContainText('$2,234')
 
   expect(errors).toEqual([])
 })
