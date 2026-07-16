@@ -7,7 +7,6 @@ import { getCategories } from '../lib/categories'
 import { TransactionSheet } from '../components/TransactionSheet'
 import { MonthCalendar } from '../components/MonthCalendar'
 import { shiftMonth } from '../lib/calendar'
-import { dayFeesFromTx, dayFeeRatio } from '../lib/aggregate'
 import type { Transaction } from '../types'
 
 interface LedgerPageProps {
@@ -163,57 +162,23 @@ export function LedgerPage({ date, onDateChange, onSync }: LedgerPageProps) {
         )}
       </div>
 
-      {/* 當日小計：收入/支出/淨額（扣分潤）三張卡 + 外送佔比洞察（自移除的首頁搬入，適用任一選定日） */}
-      {!loading && transactions.length > 0 && (() => {
-        const fees = dayFeesFromTx(transactions, cats)
-        const netAfterFees = totalIncome - totalExpense - fees
-        const feeRatio = dayFeeRatio(transactions, cats)
-        // 有任何 fee>0 收入類別時 label 標示「扣分潤」；fee 類別名稱清單供洞察卡文案
-        const feeCatNames = cats.filter(c => c.type === 'income' && (c.fee ?? 0) > 0).map(c => c.name)
-        return (
-          <>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <div style={{ flex: 1, background: T.mintSoft, borderRadius: T.r.lg, padding: '12px 10px' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.mintInk }}>收入合計</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: T.mintInk, fontFamily: T.font.num, marginTop: 2 }}>
-                  {fmt(totalIncome)}
-                </div>
-              </div>
-              <div style={{ flex: 1, background: T.coralSoft, borderRadius: T.r.lg, padding: '12px 10px' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.coralInk }}>支出合計</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: T.coralInk, fontFamily: T.font.num, marginTop: 2 }}>
-                  {fmt(totalExpense)}
-                </div>
-              </div>
-              {/* 深色卡=當日結論（扣分潤實收），與月曆格毛額刻意不同（Phase 7 既有決策） */}
-              <div style={{ flex: 1, background: T.ink, borderRadius: T.r.lg, padding: '12px 10px' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.75)' }}>
-                  {feeCatNames.length > 0 ? '淨額（扣分潤）' : '淨額'}
-                </div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', fontFamily: T.font.num, marginTop: 2 }}>
-                  {fmt(netAfterFees, { plus: true })}
-                </div>
-              </div>
+      {/* 當日小計：收入/支出合計兩張卡 */}
+      {!loading && transactions.length > 0 && (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ flex: 1, background: T.mintSoft, borderRadius: T.r.lg, padding: '12px 10px' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.mintInk }}>收入合計</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.mintInk, fontFamily: T.font.num, marginTop: 2 }}>
+              {fmt(totalIncome)}
             </div>
-
-            {/* 外送佔比洞察：fee>0 類別收入佔比 > 40% 才顯示（沿用原首頁文案，改「當日」措辭） */}
-            {feeRatio > 0.4 && feeCatNames.length > 0 && (
-              <div style={{ padding: 14, borderRadius: T.r.lg, background: `linear-gradient(135deg, ${T.sunSoft} 0%, ${T.peachSoft} 100%)`, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                <div style={{ width: 32, height: 32, borderRadius: 10, flexShrink: 0, background: '#fff', color: T.peachInk, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name="sparkle" size={16} stroke={2.4} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 2 }}>外送佔比偏高</div>
-                  <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.5 }}>
-                    {feeCatNames.join('、')} 合計佔當日收入 {Math.round(feeRatio * 100)}%，
-                    已扣手續費 {fmt(fees)}，建議多推內用方案提升毛利。
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        )
-      })()}
+          </div>
+          <div style={{ flex: 1, background: T.coralSoft, borderRadius: T.r.lg, padding: '12px 10px' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.coralInk }}>支出合計</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.coralInk, fontFamily: T.font.num, marginTop: 2 }}>
+              {fmt(totalExpense)}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FAB 定位包層：比照 App.tsx 底部導覽列的置中手法（left:50% + maxWidth 430），
           讓 FAB 在任何裝置寬度下都對齊同一個置中欄位的右緣，而非整個視窗右緣 */}
