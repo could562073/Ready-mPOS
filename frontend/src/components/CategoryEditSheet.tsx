@@ -144,31 +144,6 @@ export function EditSheet({ draft, isNew, onSave, onDelete, onClose }: {
             <ColorGrid selected={local.color} onChange={color => update({ color })} />
           </div>
 
-          {local.type === 'income' && (
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 4 }}>平台手續費 %</div>
-              <div style={{ fontSize: 11, color: T.muted, fontWeight: 500, marginBottom: 8 }}>
-                0 表示無手續費，輸入 30 = 扣 30%
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input
-                  type="number"
-                  min={0} max={100} step={1}
-                  value={Math.round((local.fee ?? 0) * 100)}
-                  onChange={e => update({ fee: Math.min(100, Math.max(0, Number(e.target.value))) / 100 })}
-                  style={{
-                    width: 80, padding: '10px 12px', borderRadius: T.r.sm,
-                    border: `1.5px solid ${T.hairline}`,
-                    fontSize: 15, fontWeight: 700, color: T.ink,
-                    background: T.bg, outline: 'none', fontFamily: T.font.num,
-                    textAlign: 'right',
-                  }}
-                />
-                <span style={{ fontSize: 14, fontWeight: 700, color: T.muted }}>%</span>
-              </div>
-            </div>
-          )}
-
           {/* 二級分類（繼承一級 icon/color/fee，只編輯名稱與預設） */}
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8 }}>二級分類</div>

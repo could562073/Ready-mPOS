@@ -11,8 +11,8 @@ const LS_DIRTY = 'mpos_categories_dirty'
 export const DEFAULT_INCOME: Category[] = [
   { id: 'cash',  name: '現金',      icon: 'cash',    color: 'mint',     fee: 0,    enabled: true, type: 'income' },
   { id: 'card',  name: '刷卡',      icon: 'card',    color: 'sky',      fee: 0,    enabled: true, type: 'income' },
-  { id: 'uber',  name: 'Uber Eats', icon: 'bike',    color: 'lavender', fee: 0.30, enabled: true, type: 'income' },
-  { id: 'panda', name: 'foodpanda', icon: 'package', color: 'pink',     fee: 0.35, enabled: true, type: 'income' },
+  { id: 'uber',  name: 'Uber Eats', icon: 'bike',    color: 'lavender', fee: 0,    enabled: true, type: 'income' },
+  { id: 'panda', name: 'foodpanda', icon: 'package', color: 'pink',     fee: 0,    enabled: true, type: 'income' },
 ]
 
 // 預設支出類別（對應原有固定欄位）
