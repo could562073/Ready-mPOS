@@ -3,7 +3,7 @@
 > **日期**: 2026-07-14
 > **狀態**: 已核准（brainstorming 方案 A）
 > **目標版本**: 2.2.0（MINOR）
-> **分支**: `feature/remove-dashboard`（worktree: `worktree-remove-dashboard`）
+> **分支**: `feature/remove-dashboard`（worktree 目錄: `.claude/worktrees/remove-dashboard`）
 
 ## 背景與動機
 
@@ -67,9 +67,12 @@
 - **Vitest**：新純函式 `dayFeesFromTx`／`dayFeeRatio`（含：無 fee 類別、
   多 fee 類別、支出交易不計費、總收入 0、未知 categoryId 不計）。
 - **E2E（Playwright）**：
-  - `smoke.spec.ts`：移除「首頁」tab 斷言與 Hero 檢查，改驗帳目頁小計三張卡渲染。
+  - `smoke.spec.ts`：移除「首頁」tab 斷言與 Hero 檢查。三張小計卡渲染需要當日已有交易
+    （小計區門檻為 `transactions.length > 0`），而 smoke 的 `beforeEach` 只種「已完成
+    onboarding」狀態、不種交易資料，故三卡斷言不放這裡，改放 `transactions.spec.ts`
+    （見下）——smoke 僅維持既有「四個 tab 都能切換渲染」測試改為三個 tab。
   - `transactions.spec.ts` Phase 7 案例：「切到首頁斷言 Hero 反映新交易」改為
-    「帳目頁小計『淨額（扣分潤）』反映新交易」；月結斷言不變。
+    「帳目頁小計三張卡（含『淨額（扣分潤）』）與外送佔比洞察卡反映新交易」；月結斷言不變。
 - `tsc --noEmit`、`npm test`、`npm run build` 全綠。
 
 ### 5. 版本與文檔
