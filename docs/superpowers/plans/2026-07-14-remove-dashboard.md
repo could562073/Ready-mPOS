@@ -529,6 +529,132 @@ EOF
 
 ---
 
+## 擴充範圍：拔除分潤機制（Task 7–12，2026-07-16 追加）
+
+執行 Task 6 前使用者發現：分潤（外送平台手續費扣抵）機制在真實記帳場景中從未真正被使用——
+Uber Eats／foodpanda 撥款到銀行時已是平台抽成後的淨額，店家記的「收入」本來就是實際入帳金額，
+不需要 App 再算一次手續費扣除；本分支剛搬進帳目頁的「淨額（扣分潤）」卡與外送佔比洞察卡，
+連同月結頁既有的手續費扣除計算，其實都建立在一個不成立的前提上。
+
+**Global Constraints 追加：**
+- 分潤機制**停用但不做資料模型/同步格式變更**：`Category.fee` 型別欄位與 Sheets `_config` 的
+  `fee` 欄位維持不動（保留供未來或既有雲端資料相容），但拔除所有會實際「呈現」或「計算」
+  fee 的 UI 與邏輯路徑。`calcFees()`（`lib/categories.ts`）本身**保留不刪**——僅存在的呼叫方
+  剩下已停用路由的 `DailyEntryPage.tsx`（Phase 4 起未掛載，維持原計畫「不動遺留檔案」的方針）。
+- 本擴充延續使用同一支 `feature/remove-dashboard` 分支、同一份 2.2.0 版本號（尚未合併 main，
+  不需另開分支或另外 bump）。
+- Task 6（推分支 + Draft PR）延後到 Task 7–12 完成後才執行 Step 2（開 PR）；
+  Step 1（推分支）已完成且與本擴充不衝突。
+
+### Task 7: 撤除帳目頁「淨額（扣分潤）」卡與外送佔比洞察卡，aggregate.ts 撤回 dayFeesFromTx/dayFeeRatio
+
+**Files:**
+- Modify: `frontend/src/pages/LedgerPage.tsx`（三卡＋洞察卡 → 回退為二卡）
+- Modify: `frontend/src/lib/aggregate.ts`（移除 `dayFeesFromTx`／`dayFeeRatio`，只留 `buildDailyRecordsFromTx`）
+- Modify: `frontend/src/lib/aggregate.test.ts`（移除對應的 12 個測試案例，只留 `buildDailyRecordsFromTx` 原本 4 案例）
+
+**Interfaces:**
+- Consumes: 無新介面。
+- Produces: `LedgerPage` 小計區回到「收入合計／支出合計」兩卡（`{!loading && transactions.length > 0 && (...)}` 直接渲染兩個 `<div>`，不再需要 IIFE 包裹算 fee/ratio）；`aggregate.ts` 只剩匯出 `buildDailyRecordsFromTx`。Task 10 的 E2E 依賴這裡不再出現「淨額（扣分潤）」「外送佔比偏高」文字。
+
+- [ ] **Step 1**: 讀 `LedgerPage.tsx` 目前小計區塊（Task 2 加的 IIFE，含三卡＋洞察卡），改回兩卡版本——保留「收入合計」「支出合計」兩張卡片（樣式可比照現有 mint/coral 卡片），移除第三張深色卡與下方洞察卡整段、移除 `dayFeesFromTx`/`dayFeeRatio` 的 import。
+- [ ] **Step 2**: 讀 `aggregate.ts`，刪除 `dayFeesFromTx`／`dayFeeRatio` 兩個函式定義（連同其上方註解）。
+- [ ] **Step 3**: 讀 `aggregate.test.ts`，刪除 `describe('dayFeesFromTx', ...)`／`describe('dayFeeRatio', ...)` 兩個區塊與檔頭多餘的 `Category`/`dayFeesFromTx`/`dayFeeRatio` import（只留 `buildDailyRecordsFromTx` 相關 import 與測試）。
+- [ ] **Step 4**: `cd frontend && npx tsc --noEmit && npm test -- aggregate` 確認無錯誤、只剩 4 個 `buildDailyRecordsFromTx` 案例綠燈。
+- [ ] **Step 5**: Commit — `git add frontend/src/pages/LedgerPage.tsx frontend/src/lib/aggregate.ts frontend/src/lib/aggregate.test.ts && git commit -m "revert: 撤除帳目頁扣分潤卡與洞察卡，aggregate.ts 撤回 dayFeesFromTx/dayFeeRatio（分潤機制不成立於真實記帳流程）"`
+
+---
+
+### Task 8: MonthlyReportPage.tsx 移除 calcFees 計算（Hero 淨額／上月比較／逐日列淨額回歸「收入－支出」）
+
+**Files:**
+- Modify: `frontend/src/pages/MonthlyReportPage.tsx`
+
+**Interfaces:**
+- Consumes: 無新介面。
+- Produces: `net`／`prevNet`／每列 `rowNet` 三處計算公式從 `收入－支出－calcFees(...)` 改為 `收入－支出`；`calcFees`／`getCategories` 的 `calcFees` import 移除（`getCategories` 仍需保留，`allCategories` 仍供 `knownIncomeIds`/`knownExpenseIds` 與 `CostStructureCard` 使用）。
+
+- [ ] **Step 1**: 讀 `MonthlyReportPage.tsx` 檔頭 import（第 10 行 `import { getCategories, calcFees } from '../lib/categories'`），改為 `import { getCategories } from '../lib/categories'`。
+- [ ] **Step 2**: 找到 `totalFees`／`net` 計算（約 139–141 行），刪除 `totalFees` 該行，`net` 改為 `const net = totalIncome - totalExpense`。
+- [ ] **Step 3**: 找到 `prevNet` 計算（約 148–151 行），刪除減去 `calcFees(r, allCategories)` 的那一行 reduce，只保留收入減支出兩行。
+- [ ] **Step 4**: 找到逐日列 `rowNet`（約 295 行 `const rowNet = inc - exp - calcFees(r, allCategories)`），改為 `const rowNet = inc - exp`。
+- [ ] **Step 5**: `cd frontend && npx tsc --noEmit` 確認無錯誤（`calcFees` 不再被此檔引用，但仍存在於 `categories.ts` 供 `DailyEntryPage.tsx` 使用，不應報未使用錯誤——`categories.ts` 本身不變）。
+- [ ] **Step 6**: Commit — `git add frontend/src/pages/MonthlyReportPage.tsx && git commit -m "fix: 月結淨額/上月比較/逐日列移除手續費扣除，回歸收入－支出（分潤機制不成立於真實記帳流程）"`
+
+---
+
+### Task 9: 分類管理移除手續費 UI，預設類別 fee 歸零
+
+**Files:**
+- Modify: `frontend/src/components/CategoryEditSheet.tsx`（移除「平台手續費 %」輸入區塊）
+- Modify: `frontend/src/pages/CategoriesPage.tsx`（移除「手續費 XX%」徽章）
+- Modify: `frontend/src/lib/categories.ts`（`DEFAULT_INCOME` 的 `uber`/`panda` 預設 `fee` 改為 `0`；`calcFees` 函式本身不動）
+
+**Interfaces:**
+- Consumes: 無新介面。
+- Produces: 新增/編輯收入類別時不再顯示手續費輸入欄；類別列表不再顯示手續費徽章；新安裝的 Uber Eats／foodpanda 預設類別 `fee: 0`（與其他收入類別一致）。`DraftCategory.fee` 型別欄位、`EMPTY_INCOME_DRAFT`/`EMPTY_EXPENSE_DRAFT` 的 `fee: 0` 初始值維持不動（欄位保留，只是永遠是 0、UI 不再曝露可編輯的入口）。
+
+- [ ] **Step 1**: 讀 `CategoryEditSheet.tsx`，找到 `{local.type === 'income' && (...)}` 的「平台手續費 %」區塊（含說明文字、number input），整段移除。
+- [ ] **Step 2**: 讀 `CategoriesPage.tsx` 的 `CategoryRow`，找到 `{cat.fee && cat.fee > 0 ? (...) : null}` 徽章區塊，整段移除。
+- [ ] **Step 3**: 讀 `categories.ts` 的 `DEFAULT_INCOME`，把 `uber`（`fee: 0.30`）與 `panda`（`fee: 0.35`）改為 `fee: 0`（與 `cash`/`card` 一致）。
+- [ ] **Step 4**: `cd frontend && npx tsc --noEmit && npm test` 全綠（`categories.test.ts` 若有斷言舊預設 fee 值需一併確認/調整——先讀該測試檔確認是否有相關斷言，若有請一併更新為 `fee: 0`）。
+- [ ] **Step 5**: Commit — `git add frontend/src/components/CategoryEditSheet.tsx frontend/src/pages/CategoriesPage.tsx frontend/src/lib/categories.ts && git commit -m "fix: 類別管理移除手續費設定 UI，預設 Uber Eats/foodpanda fee 歸零（分潤機制不成立於真實記帳流程）"`
+
+---
+
+### Task 10: E2E 更新 — transactions.spec.ts 重寫本分支新增測試，三份 spec 種子 fee 值歸零對齊真實預設
+
+**Files:**
+- Modify: `frontend/e2e/transactions.spec.ts`（重寫本分支 Task 4 新增的測試，不再驗證扣分潤卡／洞察卡）
+- Modify: `frontend/e2e/monthly-report.spec.ts`（種子陣列 `uber`/`panda` 的 `fee` 改 0，對齊真實預設）
+- Modify: `frontend/e2e/subcategories.spec.ts`（同上）
+
+**Interfaces:**
+- Consumes: Task 7 的 LedgerPage 二卡版本（UI 文字回到「收入合計」「支出合計」，無「淨額（扣分潤）」「外送佔比偏高」）；Task 8 的 MonthlyReportPage 淨額公式。
+- Produces: 種子陣列與 `frontend/src/lib/categories.ts` 的 `DEFAULT_INCOME` 保持一致（三份 spec 檔的註解皆聲明「對應真實預設值」）。
+
+- [ ] **Step 1**: 讀 `transactions.spec.ts` 現有測試 `test('帳目新增交易後，小計淨額（扣分潤）／洞察卡／月結皆反映（transactions 重算）', ...)`（本分支 Task 4 加的），整個替換為驗證「帳目新增一筆 → 帳目頁小計反映（不含扣分潤/洞察卡文字）→ 切到月結斷言總收入反映」的等價流程，寫法可比照 Phase 7 原始測試精神（新增現金收入 $1234 → 斷言「收入合計」「支出合計」卡可見且金額正確 → 切到月結斷言總收入含該筆），移除所有「淨額（扣分潤）」「外送佔比偏高」「+$1,934」等本分支引入的斷言與 Uber Eats 相關步驟。同步更新檔頭第 8–9 行的說明註解（移除提及扣分潤/洞察卡的描述）。
+- [ ] **Step 2**: `monthly-report.spec.ts` 第 35–36 行、`subcategories.spec.ts` 第 59–60 行的種子陣列，把 `uber`/`panda` 的 `fee: 0.30`/`fee: 0.35` 改為 `fee: 0`（這兩份 spec 本身不斷言手續費相關數值，純粹是讓種子陣列忠實對應 `lib/categories.ts` 的真實預設值，註解已明講「對應真實預設值」）。
+- [ ] **Step 3**: `cd frontend && E2E_PORT=5174 npm run test:e2e`，確認全綠（本機同時有 main checkout 與本 worktree，固定用 `E2E_PORT` 避免連到舊 server）。
+- [ ] **Step 4**: Commit — `git add frontend/e2e/transactions.spec.ts frontend/e2e/monthly-report.spec.ts frontend/e2e/subcategories.spec.ts && git commit -m "fix: E2E 撤回扣分潤卡/洞察卡斷言，種子 fee 值歸零對齊真實預設"`
+
+---
+
+### Task 11: 文檔更新（CLAUDE.md／AGENTS.md）— 移除手續費/分潤機制敘述
+
+**Files:**
+- Modify: `CLAUDE.md`
+- Modify: `AGENTS.md`（與 CLAUDE.md 同步套用相同編輯，僅標題/對象行不同）
+
+**Interfaces:**
+- Consumes: Task 7–10 完成後的實際程式行為。
+- Produces: 文件不再宣稱「淨額（扣分潤）」卡／外送佔比洞察卡／月結手續費扣除存在。
+
+以下編輯對 `CLAUDE.md` 與 `AGENTS.md` 各做一次（兩檔逐字相同，僅標題/對象行不同）：
+
+- [ ] **Step 1**：Development Status 的「移除首頁（2.2.0）」條目——移除「第三張『淨額（扣分潤）』卡…＋外送佔比 >40% 洞察卡」的描述，改為只提「導覽剩 帳目/月結/設定，帳目頁小計維持原本收入/支出兩卡（分潤機制已於同分支拔除，詳見下方新增條目）」；並在其後新增一條記錄本次拔除（例如：「**分潤機制拔除（2.2.0 同分支）**: ✅ 外送平台手續費扣抵在真實記帳流程中不成立（撥款已是分潤後淨額）——帳目頁小計卡、月結 Hero／上月比較／逐日列均移除手續費扣除，類別管理移除手續費設定 UI，預設 Uber Eats/foodpanda fee 歸零。`Category.fee` 型別欄位與 Sheets `_config` 的 fee 欄位保留不動（供既有雲端資料相容），`calcFees()` 函式保留但僅剩已停用的 `DailyEntryPage.tsx` 呼叫。」）。
+- [ ] **Step 2**：CORE FUNCTIONALITY 第 3 點「外送平台手續費 — 每個收入類別可設定費率，自動從淨額扣除」——移除此點（或改寫為不再是核心功能的說明，視上下文選較通順的一種；編號可保留原順序或重新編號，以通順為準）。
+- [ ] **Step 3**：PROJECT STRUCTURE 樹狀圖中 `aggregate.ts` 的行內描述——移除「＋ dayFeesFromTx/dayFeeRatio（帳目頁扣分潤淨額/外送佔比，2.2.0）」這段（`buildDailyRecordsFromTx` 描述保留）；`categories.ts` 行內描述「類別 localStorage CRUD + calcFees」可保留（`calcFees` 函式本身沒刪）。
+- [ ] **Step 4**：「帳目頁月曆 + 落地頁」段落的 `lib/calendar.ts` 說明句尾「不扣手續費——Phase 7 已評估並刻意保留此差異，見下方 Phase 7 說明」——由於下方 Phase 7 段落的對比對象（小計卡扣分潤）即將整段改寫，這裡的指標語需同步調整，讀完 Step 5 的結果後再回頭確認這句話仍然通順或需要移除「見下方 Phase 7 說明」的指涉。
+- [ ] **Step 5**：「Dashboard/月結改用交易重算（第 2 次優化 Phase 7）」段落——第二條「月曆（Phase 6）與帳目頁小計卡（2.2.0）的每日淨額定義刻意保留差異」整段移除或改寫（分潤機制拔除後，帳目頁小計卡已無「扣手續費後淨額」這個概念，月曆與小計卡不再有「毛額 vs 扣分潤淨額」的差異可言，兩者現在算法一致，這條設計決策記錄已不成立，應移除或註記為歷史決策）；第三條 E2E 覆蓋說明句尾「（Dashboard 已於 2.2.0 移除，`buildDailyRecordsFromTx` 仍為月結所用）」——需改寫成符合 Task 10 重寫後的實際 E2E 內容（不再提「淨額（扣分潤）」卡與外送佔比洞察卡）。
+- [ ] **Step 6**：「類別系統（`lib/categories.ts`）」段落——`fee` 為小數…用於外送平台手續費計算」與「`calcFees(record, categories)` — 計算單日總手續費」兩行，改寫為說明此欄位/函式目前處於「保留但不使用」狀態（型別/Sheets 欄位保留供相容，UI 與月結/帳目頁計算已不再呼叫，唯一呼叫方是已停用路由的 `DailyEntryPage.tsx`）。
+- [ ] **Step 7**：「已知類別 ID 加總防污染」段落第二點——「扣手續費後淨額改由帳目頁小計卡『淨額（扣分潤）』承接」已不成立（該卡已撤除），改寫或移除這句話，說明原 Dashboard Hero 的扣手續費淨額概念隨分潤機制一併拔除，非搬遷到其他頁面。
+- [ ] **Step 8**：完成後 `diff CLAUDE.md AGENTS.md` 應只剩已知的兩行標題/對象差異；並跑 `grep -n "手續費\|分潤\|dayFeesFromTx\|dayFeeRatio" CLAUDE.md` 逐一確認每個殘留提及都是「歷史敘述/明確標記已移除」，不是宣稱功能仍存在的現在式描述。
+- [ ] **Step 9**: Commit — `git add CLAUDE.md AGENTS.md && git commit -m "docs: 拔除分潤機制文檔更新 — CLAUDE.md/AGENTS.md 同步移除手續費相關敘述"`
+
+---
+
+### Task 12: 全量驗證 + Task 6 收尾（Draft PR）
+
+**Files:** 無新檔案異動，純驗證與收尾。
+
+- [ ] **Step 1**: `cd frontend && npx tsc --noEmit && npm test && npm run build` 全綠。
+- [ ] **Step 2**: `cd frontend && E2E_PORT=5174 npm run test:e2e` 全綠（含 Task 10 重寫的測試）。
+- [ ] **Step 3**: （若使用者要求本機肉眼驗收）`npm run dev` 檢查：帳目頁小計回到二卡、無扣分潤/洞察卡文字；分類管理新增/編輯收入類別無手續費輸入欄、列表無手續費徽章；月結 Hero/逐日列淨額為「收入－支出」不再扣手續費。
+- [ ] **Step 4**: 回到 Task 6 Step 2，開 Draft PR（`gh pr create --draft`），PR body 需同時涵蓋「移除首頁」與「拔除分潤機制」兩部分變更摘要（可比照原 Task 6 PR body 格式，Summary 加上分潤機制拔除的重點；Test plan 的 Vitest 案例數需更新為 Task 7 撤回後的實際總數）。
+
+---
+
 ## Self-Review 紀錄
 
 - **Spec 覆蓋**：導覽/刪檔（Task 3）、指標搬家（Task 1–2）、E2E（Task 4）、版本/文檔（Task 5）✅。spec 提到「smoke 改驗三卡」——smoke 未種交易、小計不渲染，三卡斷言改放 transactions.spec（意圖一致，已在 Task 4 落實；spec §4 已同步改字，見下方外部審查一節）。
