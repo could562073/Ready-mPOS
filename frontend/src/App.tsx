@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { DashboardPage } from './pages/DashboardPage'
 import { LedgerPage } from './pages/LedgerPage'
 import { MonthlyReportPage } from './pages/MonthlyReportPage'
 import { SettingsPage } from './pages/SettingsPage'
@@ -10,7 +9,7 @@ import { T } from './lib/tokens'
 import { useSyncService } from './hooks/useSyncService'
 import { registerSW, sendReminderToSW, getPermission } from './lib/notification'
 
-type Tab = 'dashboard' | 'daily' | 'monthly' | 'settings'
+type Tab = 'daily' | 'monthly' | 'settings'
 type SubPage = 'categories' | null
 
 function toLocalDateString(d: Date): string {
@@ -20,12 +19,11 @@ function toLocalDateString(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-// 導覽順序：帳目（落地頁，月曆＋逐筆列表）→ 首頁 → 月結 → 設定
+// 導覽順序：帳目（落地頁，月曆＋逐筆列表）→ 月結 → 設定（首頁已於 2.2.0 移除，指標併入帳目頁小計）
 const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'daily',     label: '帳目',   icon: 'calendar' },
-  { id: 'dashboard', label: '首頁',   icon: 'home'     },
-  { id: 'monthly',   label: '月結',   icon: 'chart'    },
-  { id: 'settings',  label: '設定',   icon: 'settings' },
+  { id: 'daily',    label: '帳目', icon: 'calendar' },
+  { id: 'monthly',  label: '月結', icon: 'chart'    },
+  { id: 'settings', label: '設定', icon: 'settings' },
 ]
 
 function App() {
@@ -66,9 +64,6 @@ function App() {
     setTab('daily')
   }
 
-  // Dashboard 的「編輯今日帳目」按鈕
-  const handleNavigate = (target: Tab) => setTab(target)
-
   const handleOnboardingDone = () => {
     localStorage.setItem('mpos_onboarded', '1')
     setShowOnboarding(false)
@@ -91,9 +86,6 @@ function App() {
     >
       {/* 頁面內容，底部留空給 tab bar */}
       <div style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))', paddingTop: 16 }}>
-        {tab === 'dashboard' && (
-          <DashboardPage onNavigate={handleNavigate} syncing={syncing} />
-        )}
         {tab === 'daily' && (
           <LedgerPage date={dailyDate} onDateChange={setDailyDate} onSync={syncAll} />
         )}

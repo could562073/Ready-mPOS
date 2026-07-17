@@ -11,8 +11,8 @@ const LS_DIRTY = 'mpos_categories_dirty'
 export const DEFAULT_INCOME: Category[] = [
   { id: 'cash',  name: '現金',      icon: 'cash',    color: 'mint',     fee: 0,    enabled: true, type: 'income' },
   { id: 'card',  name: '刷卡',      icon: 'card',    color: 'sky',      fee: 0,    enabled: true, type: 'income' },
-  { id: 'uber',  name: 'Uber Eats', icon: 'bike',    color: 'lavender', fee: 0.30, enabled: true, type: 'income' },
-  { id: 'panda', name: 'foodpanda', icon: 'package', color: 'pink',     fee: 0.35, enabled: true, type: 'income' },
+  { id: 'uber',  name: 'Uber Eats', icon: 'bike',    color: 'lavender', fee: 0,    enabled: true, type: 'income' },
+  { id: 'panda', name: 'foodpanda', icon: 'package', color: 'pink',     fee: 0,    enabled: true, type: 'income' },
 ]
 
 // 預設支出類別（對應原有固定欄位）
@@ -67,6 +67,7 @@ export function getAllByType(type: 'income' | 'expense'): Category[] {
 }
 
 // 計算單筆記錄的平台手續費（所有 fee > 0 的收入類別）
+// @deprecated 分潤機制已於 2.2.0 拔除；此函式已無呼叫方，保留僅供未來參考，勿重新接線
 export function calcFees(record: DailyRecord, categories: Category[]): number {
   return categories
     .filter(c => c.type === 'income' && c.fee && c.fee > 0)

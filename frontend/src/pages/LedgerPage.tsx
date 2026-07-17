@@ -162,18 +162,18 @@ export function LedgerPage({ date, onDateChange, onSync }: LedgerPageProps) {
         )}
       </div>
 
-      {/* 當日小計：收入/支出各自加總 */}
+      {/* 當日小計：收入/支出合計兩張卡 */}
       {!loading && transactions.length > 0 && (
-        <div style={{ display: 'flex', gap: 10 }}>
-          <div style={{ flex: 1, background: T.mintSoft, borderRadius: T.r.lg, padding: '12px 14px' }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ flex: 1, background: T.mintSoft, borderRadius: T.r.lg, padding: '12px 10px' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: T.mintInk }}>收入合計</div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: T.mintInk, fontFamily: T.font.num, marginTop: 2 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.mintInk, fontFamily: T.font.num, marginTop: 2 }}>
               {fmt(totalIncome)}
             </div>
           </div>
-          <div style={{ flex: 1, background: T.coralSoft, borderRadius: T.r.lg, padding: '12px 14px' }}>
+          <div style={{ flex: 1, background: T.coralSoft, borderRadius: T.r.lg, padding: '12px 10px' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: T.coralInk }}>支出合計</div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: T.coralInk, fontFamily: T.font.num, marginTop: 2 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.coralInk, fontFamily: T.font.num, marginTop: 2 }}>
               {fmt(totalExpense)}
             </div>
           </div>

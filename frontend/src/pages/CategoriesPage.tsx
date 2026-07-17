@@ -43,11 +43,6 @@ function CategoryRow({ cat, onToggle, onEdit }: {
         <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {cat.name || '（未命名）'}
         </div>
-        {cat.fee && cat.fee > 0 ? (
-          <div style={{ fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 1 }}>
-            手續費 {Math.round(cat.fee * 100)}%
-          </div>
-        ) : null}
       </div>
 
       {/* Toggle */}

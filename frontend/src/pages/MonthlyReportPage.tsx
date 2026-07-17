@@ -7,7 +7,7 @@ import { CostStructureCard } from '../components/CostStructureCard'
 import { useMonthTransactions } from '../hooks/useTransactions'
 import { buildDailyRecordsFromTx } from '../lib/aggregate'
 import { comparisonRange, limitToDay, delta } from '../lib/monthReport'
-import { getCategories, calcFees } from '../lib/categories'
+import { getCategories } from '../lib/categories'
 import type { DailyRecord } from '../types'
 
 // 加總 incomes / expenses — 只計已知類別 ID，避免 Sheets 同步帶入的陌生欄位虛增金額
@@ -136,16 +136,14 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
   const knownExpenseIds = new Set(allCategories.filter(c => c.type === 'expense').map(c => c.id))
   const totalIncome    = records.reduce((s, r) => s + dayIncome(r, knownIncomeIds),   0)
   const totalExpense   = records.reduce((s, r) => s + dayExpense(r, knownExpenseIds), 0)
-  const totalFees      = records.reduce((s, r) => s + calcFees(r, allCategories), 0)
-  const net           = totalIncome - totalExpense - totalFees
+  const net           = totalIncome - totalExpense
   const avgDaily      = records.length > 0 ? Math.round(net / records.length) : 0
 
-  // 上月基準淨額（同公式：收入 － 支出 － 手續費）；上月完全無資料則不顯示比較行
+  // 上月基準淨額（同公式：收入 － 支出）；上月完全無資料則不顯示比較行
   const prevRecords = buildDailyRecordsFromTx(prevTxs)
   const prevNet =
     prevRecords.reduce((s, r) => s + dayIncome(r, knownIncomeIds), 0) -
-    prevRecords.reduce((s, r) => s + dayExpense(r, knownExpenseIds), 0) -
-    prevRecords.reduce((s, r) => s + calcFees(r, allCategories), 0)
+    prevRecords.reduce((s, r) => s + dayExpense(r, knownExpenseIds), 0)
   const netDelta = delta(net, prevNet)
   const hasPrevData = prevRecords.length > 0
 
@@ -292,7 +290,7 @@ export function MonthlyReportPage({ onSelectDate }: Props) {
               {[...records].reverse().map(r => {
                 const inc = dayIncome(r, knownIncomeIds)
                 const exp = dayExpense(r, knownExpenseIds)
-                const rowNet = inc - exp - calcFees(r, allCategories)
+                const rowNet = inc - exp
                 const day = parseInt(r.date.slice(8))
                 return (
                   <button
