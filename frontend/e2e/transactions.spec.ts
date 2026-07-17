@@ -195,6 +195,44 @@ test('帳目新增交易後，小計兩卡／月結總收入皆反映（transact
   expect(errors).toEqual([])
 })
 
+test('分潤機制已拔除：Uber Eats（種子 fee: 0.30）收入不扣手續費，帳目小計／月結總收入／淨額皆為足額', async ({ page }) => {
+  const errors = collectPageErrors(page)
+
+  await page.goto('/')
+
+  // 落地頁即「帳目」→ 用 FAB 新增一筆「Uber Eats」收入 $1,000。
+  // 種子的 uber 類別帶 fee: 0.30（見本檔 beforeEach）——若分潤扣抵機制被誤植回
+  // MonthlyReportPage 或帳目頁小計卡，這筆收入會被打 7 折變成 $700，本測試即會失敗。
+  await page.getByRole('button', { name: '新增交易' }).click()
+  await expect(page.getByText('新增交易').last()).toBeVisible()
+  await page.getByRole('button', { name: '收入', exact: true }).click()
+  await page.getByRole('button', { name: '類別 Uber Eats' }).click()
+  await page.getByLabel('金額', { exact: true }).fill('1000')
+  await page.getByRole('button', { name: '儲存', exact: true }).click()
+  await expect(page.getByText('新增交易').last()).toBeHidden()
+  await expect(txRow(page, 'Uber Eats', '1,000')).toBeVisible()
+
+  // 帳目頁「收入合計」卡：足額 $1,000（無 30% 手續費扣除），非 $700
+  await expect(page.getByText('收入合計')).toBeVisible()
+  await expect(page.locator('div').filter({ hasText: /^\$1,000$/ })).toBeVisible()
+
+  // 切到「月結」→ 本月「總收入」（經 buildDailyRecordsFromTx 重算）為足額 $1,000
+  await navTab(page, '月結').click()
+  const totalIncomeStat = page.locator('div')
+    .filter({ hasText: '總收入' })
+    .filter({ hasNotText: '總支出' })
+    .first()
+  await expect(totalIncomeStat).toContainText('$1,000')
+  await expect(totalIncomeStat).not.toContainText('$700')
+
+  // 本月淨額 Hero：無支出 → 淨額 = 收入 − 支出 = +$1,000（同樣無手續費扣除）
+  await expect(page.getByText('本月淨額', { exact: false })).toBeVisible()
+  await expect(page.getByText('+$1,000', { exact: true })).toBeVisible()
+  await expect(page.getByText('+$700', { exact: true })).toHaveCount(0)
+
+  expect(errors).toEqual([])
+})
+
 test('TransactionSheet：二級就地新增後自動選取，且記住這個一級下次帶入同一個二級', async ({ page }) => {
   const errors = collectPageErrors(page)
 

@@ -67,6 +67,7 @@ export function getAllByType(type: 'income' | 'expense'): Category[] {
 }
 
 // 計算單筆記錄的平台手續費（所有 fee > 0 的收入類別）
+// @deprecated 分潤機制已於 2.2.0 拔除；此函式已無呼叫方，保留僅供未來參考，勿重新接線
 export function calcFees(record: DailyRecord, categories: Category[]): number {
   return categories
     .filter(c => c.type === 'income' && c.fee && c.fee > 0)
