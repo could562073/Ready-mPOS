@@ -113,6 +113,9 @@ export function reportError(context: string, err: unknown, extra?: Record<string
       ua: typeof navigator !== 'undefined' ? navigator.userAgent : '',
       time: new Date().toISOString(),
       extra: extra ?? {},
+      // 選用防濫用 token：與 Apps Script 端 REQUIRED_TOKEN 比對放行。非機密（同樣內嵌於公開
+      // bundle，只擋隨機爬蟲，非帳目資料）；未設定時為空字串，Apps Script 未啟用檢查時會忽略。
+      token: import.meta.env.VITE_ERROR_REPORT_TOKEN || '',
     }
 
     // no-cors fire-and-forget：Apps Script 不回 CORS 標頭，用 no-cors 送出即可（讀不到回應無妨）；

@@ -108,9 +108,10 @@ function doPost(e) {
 ```
 
 ## 選用：防濫用 token（提高門檻，非真正保密）
-若想擋掉隨機 POST：
+前端**已內建**送出 `token` 欄位（`errorReport.ts` 的 payload 讀 `VITE_ERROR_REPORT_TOKEN`）。
+若想擋掉隨機 POST，只需兩邊填上同一組字串：
 1. Apps Script：把 `REQUIRED_TOKEN` 設一段隨機字串，並解除 `doPost` 內 token 檢查那幾行的註解。
-2. 前端：在 `errorReport.ts` 的 payload 加一個 `token` 欄位（值放另一個 `VITE_ERROR_REPORT_TOKEN` env）。
+2. 前端：在 `frontend/.env.production` 設 `VITE_ERROR_REPORT_TOKEN=<同一組字串>`（留空＝不帶 token）。
 
 因 token 一樣被內嵌進公開 bundle，這只擋得掉不解析前端的爬蟲；刻意者仍可讀到。日常個人專案通常不需要。
 
