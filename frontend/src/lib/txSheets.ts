@@ -73,6 +73,26 @@ export interface TxMergePlan {
   toUpdate: { localId: number; seed: TxSeed }[]
 }
 
+// 決定本輪要「整月 clear+覆蓋改寫」的月份集合（純函式，鎖定資料保護 gating）：
+//  - 有本機待同步變更（PENDING/DELETED）的月份要寫回；但若該月是雲端「舊彙總格式」且本輪不允許改寫舊格式
+//    （allowOldRewrite=false，通常因備份失敗）→ 排除，🔴 絕不在沒有成功備份的情況下 clear+覆蓋舊資料。
+//  - allowOldRewrite=true 時，所有舊格式月份都一併改寫（cutover 轉新格式）。
+//  - upgradeMonths（缺「一級ID」欄的 2.0.0 新格式月份）一律就地補欄——屬加欄改寫、不動舊彙總資料，
+//    不受舊格式備份門檻限制。
+export function planMonthsToRewrite(input: {
+  pendingMonths: Iterable<string>
+  oldFormatMonths: Iterable<string>
+  upgradeMonths: Iterable<string>
+  allowOldRewrite: boolean
+}): string[] {
+  const oldSet = new Set(input.oldFormatMonths)
+  const out = new Set<string>()
+  for (const m of input.pendingMonths) if (input.allowOldRewrite || !oldSet.has(m)) out.add(m)
+  if (input.allowOldRewrite) for (const m of oldSet) out.add(m)
+  for (const m of input.upgradeMonths) out.add(m)
+  return [...out]
+}
+
 // 以 Transaction.id 去重對帳：雲端無對應 → 新增；本機 SYNCED 同 id → 以雲端覆蓋；本機 PENDING 同 id → 保留本機修改
 export function mergeTransactionsById(local: Transaction[], remote: TxSeed[]): TxMergePlan {
   const byId = new Map(local.map(t => [t.id, t]))
