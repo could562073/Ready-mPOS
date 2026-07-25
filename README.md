@@ -4,7 +4,7 @@
 
 > **架構**：純前端 PWA，無後端伺服器。IndexedDB 離線儲存 + Google Sheets 雲端同步。
 >
-> **版本**：`2.1.0`（SemVer；2.1.0 = 月結分析對帳報表——未記帳日卡/成本結構卡/Hero 上月比較）。版本號單一事實來源＝`frontend/package.json`，設定頁底部顯示。
+> **版本**：`2.2.1`（SemVer）。沿革：`2.1.0` 月結分析對帳報表 → `2.2.0` 移除首頁＋拔除分潤（外送手續費）機制 → `2.2.1` 修客戶端「每存一筆就跳資料升級中」無窮迴圈 stop-gap ＋ 遠端錯誤回報上線（詳見下方「近期版本」）。版本號單一事實來源＝`frontend/package.json`，設定頁底部顯示。
 
 ## Tech Stack
 
@@ -258,6 +258,12 @@ Ready-mPOS/
 - Playwright E2E 覆蓋：帳目用 FAB 新增一筆今日收入 → 首頁今日淨額 Hero 反映該筆 → 月結本月總收入含該筆
 
 第 2 次優化（逐筆交易改造）至此 **Phase 1–7 全部完成**。cutover 已於 2026-07-11 執行（使用者核准）：併回 `main` + tag `v2.0.0`，正式站 production build 自動採用正式表名，真實資料由自動遷移（備份→改寫→阻擋層）處理。
+
+## 近期版本（2.1 → 2.2）
+
+- **2.1.0** — 月結分析對帳報表：未記帳日卡（固定週公休＋臨時逐日標記）、成本結構卡（二級細目／支出佔收入比／vs 上月增減）、Hero vs 上月淨額。
+- **2.2.0** — **移除首頁** tab（導覽剩 帳目／月結／設定，`DashboardPage.tsx` 已刪）＋**拔除分潤（外送手續費）機制**：撥款已是分潤後淨額、手續費扣抵不成立，帳目頁小計／月結／類別管理均移除手續費，`Category.fee` 型別欄與 Sheets `_config` fee 欄保留供既有雲端資料相容但不再讀取。
+- **2.2.1** — 修正正式站客戶端「每存一筆就跳全螢幕『資料升級中』」無窮迴圈（根因：`backupSpreadsheet` 每次失敗 → 舊格式月份永遠轉不成 → 遷移每次成立、每筆記帳彈阻擋層）。**Part B（stop-gap）**：遷移阻擋層＋備份每次開 App 最多一次，`allowOldRewrite` 僅備份成功才放行（資料保護紅線不變——沒成功備份就不覆蓋舊格式分頁）。**Part A**：新增 `lib/errorReport.ts` 遠端錯誤回報——fire-and-forget 到自建 Google Apps Script Web App（→ email），去識別化（`redact()` 去除試算表 ID／token）＋去重 12h 冷卻＋選用防濫用 token，**只送 message/stack/UA/version/extra/token，絕不送試算表 ID 或帳目金額**；設定步驟見 `docs/error-reporting-apps-script.md`。2026-07-25 已部署上線並端到端驗證（收信成功）。⚠️ 2.2.1 為 stop-gap、**未修根因**，待真實 `sync/backup` 錯誤信到再做 Part C（改用單一固定備份表反覆覆蓋、不每次新建）。
 
 ## Git 分支流程
 
