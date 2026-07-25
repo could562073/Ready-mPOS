@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSignature, markAndCheck, COOLDOWN_MS } from './errorReport'
+import { buildSignature, markAndCheck, redact, COOLDOWN_MS } from './errorReport'
 
 // 假 KV 儲存（vitest 為 node 環境、無 localStorage）——純函式測試以注入方式提供儲存
 function fakeStore() {
@@ -18,6 +18,37 @@ describe('buildSignature', () => {
     const long = 'x'.repeat(500)
     const sig = buildSignature('c', long)
     expect(sig.length).toBeLessThanOrEqual('c|'.length + 200)
+  })
+})
+
+describe('redact（去識別化：剝除試算表 ID/長 token，保留狀態碼與錯誤原因）', () => {
+  const REAL_ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-aBcDe' // 43 字，仿真實 spreadsheetId
+
+  it('剝除 Sheets GET 訊息內的試算表 ID，但保留 → 狀態碼與 Google 錯誤原因', () => {
+    const msg = `Sheets GET /${REAL_ID}/values/2026-07%21A1%3AZZ → 403: storageQuotaExceeded`
+    const out = redact(msg)
+    expect(out).not.toContain(REAL_ID)      // ID 已被遮蔽
+    expect(out).toContain('<id>')
+    expect(out).toContain('403')             // 診斷所需的狀態碼保留
+    expect(out).toContain('storageQuotaExceeded')
+    expect(out).toContain('2026-07')         // 月份分頁名非敏感，保留
+  })
+
+  it('遮蔽同一訊息中的多個 ID', () => {
+    const other = '1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ'
+    const out = redact(`copy /${REAL_ID}/ to /${other}/`)
+    expect(out).not.toContain(REAL_ID)
+    expect(out).not.toContain(other)
+  })
+
+  it('短字串（狀態碼、單字）不受影響', () => {
+    expect(redact('建立備份試算表失敗：403 PERMISSION_DENIED')).toBe(
+      '建立備份試算表失敗：403 PERMISSION_DENIED',
+    )
+  })
+
+  it('空字串安全', () => {
+    expect(redact('')).toBe('')
   })
 })
 

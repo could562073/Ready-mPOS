@@ -17,6 +17,14 @@ interface KVStore {
   setItem(key: string, value: string): void
 }
 
+// 純函式：去識別化。Sheets 錯誤訊息會夾帶 `/<spreadsheetId>/...` 路徑（見 sheets.ts 的
+// sheetsGet/sheetsPut 丟錯格式），若原封不動回報就等於把試算表 ID 寄出去，違反隱私鐵則。
+// 作法：把任何 30 字以上的 base64url 樣式長字串（試算表 ID 44 字、OAuth token 更長）換成 <id>，
+// 同時保留狀態碼（如 403）與 Google 錯誤原因（如 storageQuotaExceeded）等診斷所需的短字。
+export function redact(text: string): string {
+  return text.replace(/[A-Za-z0-9_-]{30,}/g, '<id>')
+}
+
 // 簽章：情境 + 訊息前綴（截斷避免 key 過長）。相同簽章視為同一錯誤，用於去重。
 export function buildSignature(context: string, message: string): string {
   return `${context}|${message.slice(0, 200)}`
@@ -88,7 +96,9 @@ export function reportError(context: string, err: unknown, extra?: Record<string
     const url = import.meta.env.VITE_ERROR_REPORT_URL
     if (!url) return // 未設定端點（dev/staging，或正式站尚未部署 Apps Script）→ 不回報
 
-    const message = toMessage(err)
+    // 🔴 先去識別化再做任何事：Sheets 錯誤訊息夾帶 `/<spreadsheetId>/...`，絕不能寄出。
+    // 對簽章也用去識別化後的訊息，避免僅 ID 不同（如每次新建的備份表 ID）被當成不同錯誤而重複寄。
+    const message = redact(toMessage(err))
     const sig = buildSignature(context, message)
     const store = safeStore()
     // store 存在才做去重；store 不可用時直接送出（極少數環境）
@@ -99,7 +109,7 @@ export function reportError(context: string, err: unknown, extra?: Record<string
       version: appVersion(),
       context,
       message,
-      stack: toStack(err),
+      stack: redact(toStack(err)),
       ua: typeof navigator !== 'undefined' ? navigator.userAgent : '',
       time: new Date().toISOString(),
       extra: extra ?? {},
