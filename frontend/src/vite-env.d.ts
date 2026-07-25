@@ -8,6 +8,12 @@ interface ImportMetaEnv {
   readonly VITE_GOOGLE_CLIENT_ID?: string
   /** 同步試算表名稱：dev/staging=測試表、production=正式表（見 git workflow spec） */
   readonly VITE_SHEET_NAME?: string
+  /** 遠端錯誤回報端點（Google Apps Script Web App URL）；空＝停用回報。
+   *  僅 .env.production 設定，dev/staging 留空故不送。見 docs/error-reporting-apps-script.md */
+  readonly VITE_ERROR_REPORT_URL?: string
+  /** 選用防濫用 token：與 Apps Script 端 REQUIRED_TOKEN 比對。非機密（內嵌於公開 bundle）；
+   *  空＝不帶 token。見 docs/error-reporting-apps-script.md「選用：防濫用 token」 */
+  readonly VITE_ERROR_REPORT_TOKEN?: string
 }
 
 interface ImportMeta {

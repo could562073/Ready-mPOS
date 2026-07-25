@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { TX_MONTH_HEADERS, isNewTxFormat, txToRow, rowToTx, mergeTransactionsById } from './txSheets'
+import { TX_MONTH_HEADERS, isNewTxFormat, txToRow, rowToTx, mergeTransactionsById, planMonthsToRewrite } from './txSheets'
 import type { Category, Transaction } from '../types'
 import type { TxSeed } from './txSheets'
 
@@ -121,5 +121,48 @@ describe('mergeTransactionsById', () => {
     const plan = mergeTransactionsById(withTombstone, [seed('d', 40)])
     expect(plan.toAdd).toEqual([])
     expect(plan.toUpdate).toEqual([])
+  })
+})
+
+describe('planMonthsToRewrite（改寫月份 gating）', () => {
+  it('備份失敗（allowOldRewrite=false）時排除舊格式月份，即使該月有本機 PENDING', () => {
+    const r = planMonthsToRewrite({
+      pendingMonths: ['2026-06', '2026-07'],
+      oldFormatMonths: ['2026-06'],
+      upgradeMonths: [],
+      allowOldRewrite: false,
+    })
+    expect(r).toContain('2026-07')
+    expect(r).not.toContain('2026-06')
+  })
+
+  it('允許改寫時，PENDING 月份 ∪ 舊格式月份都改寫', () => {
+    const r = planMonthsToRewrite({
+      pendingMonths: ['2026-07'],
+      oldFormatMonths: ['2026-05', '2026-06'],
+      upgradeMonths: [],
+      allowOldRewrite: true,
+    })
+    expect(new Set(r)).toEqual(new Set(['2026-05', '2026-06', '2026-07']))
+  })
+
+  it('缺一級ID的升級月份不受備份門檻限制，一律納入', () => {
+    const r = planMonthsToRewrite({
+      pendingMonths: [],
+      oldFormatMonths: [],
+      upgradeMonths: ['2026-04'],
+      allowOldRewrite: false,
+    })
+    expect(r).toEqual(['2026-04'])
+  })
+
+  it('去重：同月出現在多來源只列一次', () => {
+    const r = planMonthsToRewrite({
+      pendingMonths: ['2026-07'],
+      oldFormatMonths: ['2026-07'],
+      upgradeMonths: ['2026-07'],
+      allowOldRewrite: true,
+    })
+    expect(r).toEqual(['2026-07'])
   })
 })

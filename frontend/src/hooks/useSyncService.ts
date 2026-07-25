@@ -19,7 +19,8 @@ import {
   clearSpreadsheet,
   getStoredSheetName,
 } from '../lib/sheets'
-import { mergeTransactionsById } from '../lib/txSheets'
+import { mergeTransactionsById, planMonthsToRewrite } from '../lib/txSheets'
+import { reportError } from '../lib/errorReport'
 import { getCategories, isCategoriesDirty, clearCategoriesDirty } from '../lib/categories'
 import type { Category } from '../types'
 
@@ -75,6 +76,10 @@ export function useSyncService() {
   const [migrating, setMigrating]     = useState(false)
   const [migrateMsg, setMigrateMsg]   = useState('')
   const lockRef = useRef(false)
+  // 🔴 遷移只嘗試一次／每次開 App（2.2.1）：cutover 備份＋改寫本應一次完成，但若備份持續失敗，
+  // 舊格式月份永遠轉不成、遷移偵測每次儲存都成立 → 全螢幕「資料升級中」阻擋層每筆記帳都跳出。
+  // 用此旗標讓「顯示阻擋層＋跑備份」在單次 App 開啟中最多一次；之後的同步只做輕量新格式推拉。
+  const migrationTriedRef = useRef(false)
 
   // GIS script 非同步載入，輪詢直到 google.accounts 可用
   // 初始化後若已登入則靜默預取 token，把授權彈窗集中在啟動時，不在儲存/同步操作中途出現
@@ -164,39 +169,42 @@ export function useSyncService() {
       const oldSet = new Set(oldFormatMonths)
       const pendingMonths = new Set(pendingTx.map(t => t.date.slice(0, 7)))
 
-      // 舊格式月份存在＝這次同步含「新舊資料轉換」（cutover 遷移，重大改動）→ 全螢幕阻擋 UI 直到完成
-      const isMigration = oldSet.size > 0
-      if (isMigration) {
+      // 🔴 每次開 App 最多嘗試一次遷移（migrationTriedRef）：只有「本輪存在舊格式月份 且 本次開 App 尚未試過遷移」
+      //    才顯示全螢幕阻擋 UI 並跑備份。備份若持續失敗，之後同一 session 的儲存不再重跑備份、不再彈阻擋層
+      //    （改走輕量新格式推拉），避免「每存一筆就出現資料升級中」的無窮迴圈；下次重開 App 才再試一次。
+      const firstMigration = oldSet.size > 0 && !migrationTriedRef.current
+      if (firstMigration) {
+        migrationTriedRef.current = true
         setMigrating(true)
         setMigrateMsg('備份舊資料中…')
       }
 
-      // 🔴 改寫舊格式分頁前必須先成功備份（真實資料保護，guardrail 9b）；
-      //    備份失敗則本輪不改寫舊格式分頁，但仍推送本機 PENDING 所在（新格式或不存在）的月份
-      let allowOldRewrite = true
-      if (oldSet.size > 0) {
+      // 🔴 改寫舊格式分頁前必須先成功備份（真實資料保護，guardrail 9b）：預設不允許改寫舊格式，
+      //    僅在本輪遷移備份成功時才放行。備份失敗（或本輪非首次遷移、未跑備份）→ 舊格式分頁本輪不改寫。
+      let allowOldRewrite = false
+      if (firstMigration) {
         try {
           await backupSpreadsheet(sheetId)
+          allowOldRewrite = true
         } catch (err) {
+          // 備份失敗 → 本輪不改寫舊格式分頁，並把錯誤回報到開發者信箱（診斷客戶裝置上看不到的真正失敗原因）
           console.error('[sync] 備份失敗，本輪不改寫舊格式分頁：', err)
+          reportError('sync/backup', err, { oldMonthCount: oldSet.size })
           allowOldRewrite = false
         }
       }
 
-      // 🔴 備份失敗（allowOldRewrite=false）時，凡屬舊格式的月份一律排除——即使該月有本機 PENDING，
-      //    也不得在無成功備份下 clear+覆蓋舊格式分頁（否則毀掉使用者原始彙總資料）。
+      // 🔴 改寫月份 gating 抽為純函式 planMonthsToRewrite（Vitest 鎖定資料保護）：
+      //    備份失敗時舊格式月份一律排除（即使有本機 PENDING），upgradeMonths（補 ID 欄）不受備份門檻限制。
       //    v3 遷移把所有歷史交易標為 PENDING，故 cutover 時 pendingMonths ⊇ 全部歷史舊格式月份，此保護為主場景。
-      const monthsToRewrite = new Set<string>()
-      for (const m of pendingMonths) if (allowOldRewrite || !oldSet.has(m)) monthsToRewrite.add(m)
-      if (allowOldRewrite) for (const m of oldSet) monthsToRewrite.add(m)
-      // 缺「一級ID」欄的 2.0.0 新格式月份 → 就地升級改寫補 ID 欄（改名防護）。
-      // 內容已是逐筆格式、以 id 合併對帳完成，屬加欄改寫，不走舊格式的備份門檻
-      for (const m of upgradeMonths) monthsToRewrite.add(m)
+      const monthsToRewrite = planMonthsToRewrite({
+        pendingMonths, oldFormatMonths: oldSet, upgradeMonths, allowOldRewrite,
+      })
 
       let rewriteIdx = 0
       for (const month of monthsToRewrite) {
-        // 轉換進度回饋（僅遷移時顯示於阻擋層）：轉換第 N/總 個月
-        if (isMigration) setMigrateMsg(`轉換新格式中…（${++rewriteIdx}/${monthsToRewrite.size}）`)
+        // 轉換進度回饋（僅首次遷移時顯示於阻擋層）：轉換第 N/總 個月
+        if (firstMigration) setMigrateMsg(`轉換新格式中…（${++rewriteIdx}/${monthsToRewrite.length}）`)
         // 寫回內容排除 DELETED 墓碑 → 被刪的列從雲端分頁消失（整月 clear+覆蓋機制天然支援刪除）
         const monthTx = await db.transactions
           .filter(t => t.date.startsWith(month) && t.syncStatus !== 'DELETED')
@@ -215,6 +223,8 @@ export function useSyncService() {
       }
     } catch (err) {
       console.error('[sync] failed:', err)
+      // 同步整體失敗也回報（去重／冷卻在 errorReport 內處理，不會洗版；URL 未設定時 no-op）
+      reportError('sync', err)
     } finally {
       lockRef.current = false
       setSyncing(false)
