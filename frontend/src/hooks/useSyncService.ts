@@ -18,9 +18,17 @@ import {
   clearIfInvalidSpreadsheet,
   clearSpreadsheet,
   getStoredSheetName,
+  getWriteDiagnostics,
 } from '../lib/sheets'
 import { mergeTransactionsById, planMonthsToRewrite } from '../lib/txSheets'
 import { reportError } from '../lib/errorReport'
+import {
+  classifyWriteFailure,
+  isPermissionDenied,
+  writeFailureMessage,
+  type WriteDiagnostics,
+  type WriteFailureKind,
+} from '../lib/syncDiag'
 import { getCategories, isCategoriesDirty, clearCategoriesDirty } from '../lib/categories'
 import type { Category } from '../types'
 
@@ -75,6 +83,9 @@ export function useSyncService() {
   // 避免使用者在備份／改寫舊帳目期間操作而污染同步中的資料（一般同步不設此旗標）。
   const [migrating, setMigrating]     = useState(false)
   const [migrateMsg, setMigrateMsg]   = useState('')
+  // 同步失敗的「使用者可見」狀態（2.2.2）：在此之前同步失敗只寫 console + 寄診斷信，
+  // 客戶端完全無感——帳目一直停在本機 PENDING 卻以為已經上雲。null = 目前正常。
+  const [syncError, setSyncError]     = useState<{ kind: WriteFailureKind; message: string } | null>(null)
   const lockRef = useRef(false)
   // 🔴 遷移只嘗試一次／每次開 App（2.2.1）：cutover 備份＋改寫本應一次完成，但若備份持續失敗，
   // 舊格式月份永遠轉不成、遷移偵測每次儲存都成立 → 全螢幕「資料升級中」阻擋層每筆記帳都跳出。
@@ -128,6 +139,45 @@ export function useSyncService() {
     }
     return () => clearInterval(refreshTimer)
   }, [])
+
+  // 同步失敗的共用處理（2.2.2）：跑診斷探針 → 分類 → 設定使用者可見狀態 → 帶著診斷回報。
+  // 🔴 隱私：extra 只放數字／布林／scope 字串（errorReport 的 redact 不套用到 extra，
+  //    所以這裡絕不能放試算表 ID、email、access token 或任何金額）。
+  // 🔴 這支只跑在錯誤路徑上，本身不得拋例外而蓋掉原始錯誤。
+  const handleSyncFailure = useCallback(
+    async (context: string, err: unknown, extra?: Record<string, unknown>) => {
+      let kind: WriteFailureKind = 'UNKNOWN'
+      let diag: WriteDiagnostics | null = null
+      try {
+        // 只有「像是權限／配額被擋」才值得多打 3 個 API；離線／逾時跑探針也只是再失敗一次
+        if (isPermissionDenied(err)) {
+          diag = await getWriteDiagnostics()
+          kind = classifyWriteFailure(diag)
+        }
+      } catch {
+        /* 探針失敗就維持 UNKNOWN，不影響回報 */
+      }
+      setSyncError({ kind, message: writeFailureMessage(kind) })
+      reportError(context, err, {
+        ...extra,
+        kind,
+        ...(diag
+          ? {
+              quotaLimit: diag.quota?.limit ?? null,
+              quotaUsage: diag.quota?.usage ?? null,
+              canEdit: diag.canEdit,
+              ownedByMe: diag.ownedByMe,
+              trashed: diag.trashed,
+              scopes: diag.scopes,
+            }
+          : {}),
+      })
+    },
+    [],
+  )
+
+  // 使用者手動關閉提示（下次同步再失敗會重新出現）
+  const dismissSyncError = useCallback(() => setSyncError(null), [])
 
   const syncAll = useCallback(async () => {
     // sheetId 有效性延到取得 token 後、於 ensureValidSpreadsheet 檢查（垃圾桶/刪除自我修復），此處不擋
@@ -189,7 +239,7 @@ export function useSyncService() {
         } catch (err) {
           // 備份失敗 → 本輪不改寫舊格式分頁，並把錯誤回報到開發者信箱（診斷客戶裝置上看不到的真正失敗原因）
           console.error('[sync] 備份失敗，本輪不改寫舊格式分頁：', err)
-          reportError('sync/backup', err, { oldMonthCount: oldSet.size })
+          await handleSyncFailure('sync/backup', err, { oldMonthCount: oldSet.size })
           allowOldRewrite = false
         }
       }
@@ -221,10 +271,15 @@ export function useSyncService() {
           .filter(t => t.date.startsWith(month) && t.syncStatus === 'DELETED')
           .delete()
       }
+      // 走到這裡＝整輪同步（含所有月份寫回）沒有丟例外 → 清除失敗提示。
+      // 刻意也清掉「本輪備份失敗」設下的提示：備份失敗只代表舊格式月份延後轉換，
+      // 帳目本身已成功上雲，此時再顯示「只存在本機」是錯的。
+      setSyncError(null)
     } catch (err) {
       console.error('[sync] failed:', err)
       // 同步整體失敗也回報（去重／冷卻在 errorReport 內處理，不會洗版；URL 未設定時 no-op）
-      reportError('sync', err)
+      // 2.2.2 起同時跑診斷探針並設定使用者可見的失敗提示
+      await handleSyncFailure('sync', err)
     } finally {
       lockRef.current = false
       setSyncing(false)
@@ -232,7 +287,7 @@ export function useSyncService() {
       setMigrating(false)
       setMigrateMsg('')
     }
-  }, [])
+  }, [handleSyncFailure])
 
   // 強制從雲端還原：清空本機後以雲端資料完整覆蓋
   const restoreFromSheets = useCallback(async () => {
@@ -336,6 +391,8 @@ export function useSyncService() {
     restoring,
     migrating,
     migrateMsg,
+    syncError,
+    dismissSyncError,
     restoreFromSheets,
     clearLocalData,
     isConfigured: isGoogleConfigured(),

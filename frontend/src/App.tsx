@@ -5,6 +5,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { CategoriesPage } from './pages/CategoriesPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { Icon } from './components/Icon'
+import { SyncErrorBanner } from './components/SyncErrorBanner'
 import { T } from './lib/tokens'
 import { useSyncService } from './hooks/useSyncService'
 import { registerSW, sendReminderToSW, getPermission } from './lib/notification'
@@ -54,6 +55,7 @@ function App() {
     googleEmail, signIn, signOut, signInError, creating,
     restoring, restoreFromSheets,
     migrating, migrateMsg,
+    syncError, dismissSyncError,
     clearLocalData,
     isConfigured, setCustomSheet,
   } = useSyncService()
@@ -86,6 +88,10 @@ function App() {
     >
       {/* 頁面內容，底部留空給 tab bar */}
       <div style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))', paddingTop: 16 }}>
+        {/* 同步失敗提示：跨所有 tab 顯示——帳目上不了雲是全域狀態，不該只在某一頁看得到 */}
+        {syncError && (
+          <SyncErrorBanner kind={syncError.kind} message={syncError.message} onDismiss={dismissSyncError} />
+        )}
         {tab === 'daily' && (
           <LedgerPage date={dailyDate} onDateChange={setDailyDate} onSync={syncAll} />
         )}

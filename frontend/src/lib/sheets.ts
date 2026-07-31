@@ -2,6 +2,7 @@ import type { DailyRecord, Category, Transaction } from '../types'
 import { applyCloudCategories, isCategoriesDirty, clearCategoriesDirty, serializeSubs, parseSubs } from './categories'
 import { TX_MONTH_HEADERS, isNewTxFormat, txToRow, rowToTx, type TxSeed } from './txSheets'
 import { explodeDailyRecord } from './migrate'
+import type { WriteDiagnostics } from './syncDiag'
 
 const CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) || ''
 
@@ -174,6 +175,80 @@ export const setSpreadsheetId = (id: string, name?: string): void => {
 export const clearSpreadsheet = (): void => {
   localStorage.removeItem(LS_SHEET_ID)
   localStorage.removeItem(LS_SHEET_NAME)
+}
+
+// 寫入失敗診斷探針（2.2.2）
+// 正式站客戶端出現「讀得到、所有寫入 403」，而 Google 只回泛用的
+// 「The caller does not have permission」，光看錯誤本身無法區分成因。
+// 這支探針收集足以區分成因的事實，交給 classifyWriteFailure 判讀。
+// 🔴 三個原則：
+//   1. 絕不 throw —— 它只跑在錯誤處理路徑上，不能把原本要回報的錯誤蓋掉。
+//   2. 只收集非敏感事實（數字／布林／scope 字串）；不回傳 email、試算表 ID、access token。
+//   3. 只用現有 scope（drive.metadata.readonly 已足夠呼叫 about.get 與 files.get），不需客戶重新授權。
+export async function getWriteDiagnostics(): Promise<WriteDiagnostics> {
+  const diag: WriteDiagnostics = { quota: null, canEdit: null, ownedByMe: null, trashed: null, scopes: null }
+
+  let token: string
+  try {
+    token = await acquireToken()
+  } catch {
+    return diag // 連 token 都拿不到就沒得測，全部留 null
+  }
+  const headers = { Authorization: `Bearer ${token}` }
+
+  // Drive API 的 int64 欄位（limit/usage）是「字串」，要轉數字；缺漏一律 null
+  const num = (v: unknown): number | null => {
+    if (v === undefined || v === null) return null
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  }
+
+  const id = getSpreadsheetId()
+
+  await Promise.all([
+    // 容量：limit 在「無容量上限」的帳號會缺漏，此時 classifyWriteFailure 不會判 QUOTA_FULL
+    (async () => {
+      try {
+        const res = await fetch('https://www.googleapis.com/drive/v3/about?fields=storageQuota', { headers })
+        if (!res.ok) return
+        const d = (await res.json()) as { storageQuota?: { limit?: string; usage?: string } }
+        diag.quota = { limit: num(d.storageQuota?.limit), usage: num(d.storageQuota?.usage) }
+      } catch { /* 探針失敗留 null */ }
+    })(),
+
+    // 目前鎖定的試算表：能不能編輯、是不是自己的、是否在垃圾桶
+    (async () => {
+      if (!id) return
+      try {
+        const res = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${id}?fields=capabilities(canEdit),ownedByMe,trashed`,
+          { headers },
+        )
+        if (!res.ok) return
+        const d = (await res.json()) as {
+          capabilities?: { canEdit?: boolean }
+          ownedByMe?: boolean
+          trashed?: boolean
+        }
+        diag.canEdit = d.capabilities?.canEdit ?? null
+        diag.ownedByMe = d.ownedByMe ?? null
+        diag.trashed = d.trashed ?? null
+      } catch { /* 探針失敗留 null */ }
+    })(),
+
+    // token「實際被授予」的 scopes（可能少於我們請求的，例如使用者在同意畫面取消勾選）
+    // ⚠️ 只取 scope 字串，access_token 本身絕不外流到回報 payload
+    (async () => {
+      try {
+        const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`)
+        if (!res.ok) return
+        const d = (await res.json()) as { scope?: string }
+        if (typeof d.scope === 'string') diag.scopes = d.scope.split(' ').filter(Boolean)
+      } catch { /* 探針失敗留 null */ }
+    })(),
+  ])
+
+  return diag
 }
 
 // 檢查已儲存的試算表 ID 是否仍有效，「確定失效」才清除指標。
