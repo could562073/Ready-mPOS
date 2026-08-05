@@ -29,12 +29,24 @@ const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets'
 /**
  * 依診斷事實判斷寫入失敗的成因。
  *
- * 判斷順序刻意如此，不可任意調換：
+ * 判斷順序：
  * 1. SCOPE_MISSING — 沒有 spreadsheets scope 時，其餘判斷都失去意義。
- * 2. QUOTA_FULL   — 🔴 必須排在 canEdit 之前：Google 帳號空間用滿時，連「自己擁有的
- *                    檔案」都會被降成唯讀（canEdit=false）。若先看 canEdit，就會把
- *                    「空間滿」誤判成「沒有編輯權」，給客戶完全錯誤的指示。
- * 3. NO_EDIT_PERMISSION — 空間充足卻仍不能編輯 = 真的是權限問題（例如鎖到別人分享的唯讀表）。
+ * 2. QUOTA_FULL   — 容量是可量化的硬事實（usage >= limit 沒有解讀空間），先判。
+ * 3. NO_EDIT_PERMISSION — 容量正常卻仍不能編輯 = 真的是權限問題（例如鎖到別人分享的唯讀表）。
+ *
+ * 🔴 2026-08-05 實測更正（本註解原本的理由是錯的，保留此段以免有人再推一次）：
+ * 原本寫「Google 帳號空間用滿時連『自己擁有的檔案』都會被降成唯讀（canEdit=false），
+ * 所以 QUOTA_FULL 必須排在 canEdit 之前」。**實測不成立**——正式站客戶容量滿載
+ * （15.003 GiB / 上限 15.000 GiB，僅超標 3.32 MB，2026-08-05 已向客戶本人確認）時，
+ * 探針回傳的是 canEdit: true：Drive 仍宣稱該檔案可編輯，但任何寫入都 403。
+ * 即 canEdit 反映的是 ACL 權限，與容量無關；「容量滿 → 帳號轉唯讀」是獨立於 ACL
+ * 的另一道封鎖，兩者本來就是不同維度，不存在「誤判成沒有編輯權」這回事。
+ *
+ * 因此順序在這次其實**不是**關鍵（canEdit=true 不匹配第 3 條，兩種排法都會得到
+ * QUOTA_FULL）。真正讓這次定案的是「有把 quota 欄位一起收回來」——若當初只探
+ * canEdit 而沒探容量，結果會落到 UNKNOWN，客戶只看到「稍後自動重試」，成因永遠查不出來。
+ * 教訓：診斷的價值在事實收得夠不夠齊，不在分類邏輯寫得多聰明；寧可多收一個
+ * 非敏感欄位，也不要少收（但 extra 不經 redact()，故只放數字／布林／scope 字串）。
  */
 export function classifyWriteFailure(d: WriteDiagnostics): WriteFailureKind {
   // 只有在「確實查到 scopes」時才判定缺 scope；查不到（null）不做臆測
