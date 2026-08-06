@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { T, colorMap } from '../lib/tokens'
 import { Icon } from './Icon'
-import { getCategories, addSub, saveCategories } from '../lib/categories'
+import { getCategories, addSub, saveCategories, liveSubs } from '../lib/categories'
 import { addTransaction, updateTransaction, deleteTransaction } from '../lib/transactions'
 import { pickInitialSub } from '../lib/txDraft'
 import { getLastSub, rememberLastSub } from '../lib/subMemory'
@@ -47,9 +47,10 @@ export function TransactionSheet({ date, editing, onClose, onSaved, onSync }: {
   const [addingSub, setAddingSub] = useState(false)
   const [newSubName, setNewSubName] = useState('')
 
-  const categories = getCategories().filter(c => c.type === draft.type && c.enabled)
+  // 記帳選單只列「可用來記新帳」的類別：啟用中且未被軟刪除（deleted 墓碑只服務歷史帳目顯示）
+  const categories = getCategories().filter(c => c.type === draft.type && c.enabled && !c.deleted)
   const selectedCat = categories.find(c => c.id === draft.categoryId)
-  const subOptions = selectedCat?.subs ?? []
+  const subOptions = liveSubs(selectedCat)  // 同理：已刪除的二級不再出現在 chips
   const previewColor = colorMap[selectedCat?.color ?? 'coral'] ?? colorMap['coral']
 
   const canSave = draft.categoryId !== '' && draft.amount > 0

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { T, colorMap } from '../lib/tokens'
 import { Icon } from '../components/Icon'
-import { getCategories, saveCategories } from '../lib/categories'
+import { getCategories, saveCategories, deleteCategory } from '../lib/categories'
 import { EditSheet, EMPTY_INCOME_DRAFT, EMPTY_EXPENSE_DRAFT } from '../components/CategoryEditSheet'
 import type { DraftCategory } from '../components/CategoryEditSheet'
 import type { Category } from '../types'
@@ -89,13 +89,21 @@ export function CategoriesPage({ onBack, googleEmail, onSyncCategories, onSyncAl
     saveCategories(updated)
   }
 
-  // 重命名/刪除會改變 Google Sheets 月份分頁的欄位標題，
-  // 標記所有本機記錄為 PENDING：
-  // 1) syncAll 合併階段 PENDING 記錄不會被雲端拉取覆蓋（保住本機金額）
-  // 2) 後續推送階段會把每個月用新欄位重寫，雲端與本機對齊
+  // 類別重命名後，雲端月份分頁的「一級類別／二級類別」顯示名稱欄會過時
+  // （機器關聯鍵是「一級ID／二級ID」欄，名稱只作顯示，故僅是顯示不同步、不影響對帳）。
+  // 標記所有本機交易為 PENDING：
+  // 1) syncAll 合併階段 PENDING 交易不會被雲端拉取覆蓋（保住本機金額）
+  // 2) 後續推送階段會把每個月整月重寫，雲端顯示名稱與本機對齊
+  //
+  // 🔴 兩個必要條件：
+  // ① 對象是 db.transactions —— 舊的 db.dailyRecords 自 Phase 5/7 起已無人讀寫，
+  //    改到那張死表等於整段程式碼沒作用（2.3.0 修正）。
+  // ② 必須排除 syncStatus='DELETED' 的墓碑 —— 把墓碑改成 PENDING 會讓已刪除的交易
+  //    被當成待同步資料寫回雲端而「復活」。
   const markAllRecordsPending = async () => {
     const now = new Date().toISOString()
-    await db.dailyRecords.toCollection().modify({ syncStatus: 'PENDING', updatedAt: now })
+    await db.transactions.where('syncStatus').notEqual('DELETED')
+      .modify({ syncStatus: 'PENDING', updatedAt: now })
   }
 
   const handleToggle = (id: string) => {
@@ -131,17 +139,23 @@ export function CategoriesPage({ onBack, googleEmail, onSyncCategories, onSyncAl
     }
   }
 
+  // 刪除類別 = 軟刪除（標 deleted 墓碑，2.3.0）。
+  // 舊版是 filter 掉整筆，結果引用它的歷史交易變成孤兒，金額從月結總數與趨勢圖消失
+  // ——當時確認視窗還寫著「歷史帳目不受影響」，是錯的。現在標記後：
+  // 記帳選單看不到它，但顯示與加總照舊查得到，舊帳目才真正不受影響。
+  // 月份分頁的列內容不因刪除而改變（名稱仍解析得到），故只需推 _config 同步墓碑旗標，
+  // 不必像重命名那樣整月重寫。
   const handleDelete = async (id: string) => {
-    if (!window.confirm('確定刪除這個類別？歷史帳目不受影響。')) return
-    const updated = categories.filter(c => c.id !== id)
+    if (!window.confirm('確定刪除這個類別？之後記帳時不會再出現，已記錄的歷史帳目與金額完全保留。')) return
+    const updated = deleteCategory(categories, id)
     persist(updated)
     setEditTarget(null)
-    await markAllRecordsPending()
-    onSyncAll()
+    onSyncCategories(updated)
   }
 
-  const incomeList  = categories.filter(c => c.type === 'income')
-  const expenseList = categories.filter(c => c.type === 'expense')
+  // 管理清單只列出未刪除的類別（已刪的仍留在儲存層供歷史帳目查名稱）
+  const incomeList  = categories.filter(c => c.type === 'income' && !c.deleted)
+  const expenseList = categories.filter(c => c.type === 'expense' && !c.deleted)
 
   return (
     <>
