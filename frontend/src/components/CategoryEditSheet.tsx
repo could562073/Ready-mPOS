@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { T, colorMap } from '../lib/tokens'
 import { Icon } from './Icon'
-import { ICON_OPTIONS, COLOR_OPTIONS, addSub, renameSub, deleteSub, setDefaultSub } from '../lib/categories'
+import { ICON_OPTIONS, COLOR_OPTIONS, addSub, renameSub, deleteSub, restoreSub, setDefaultSub } from '../lib/categories'
 
 export interface DraftCategory {
   id: string
@@ -80,6 +80,8 @@ export function EditSheet({ draft, isNew, onSave, onDelete, onClose }: {
   // 已軟刪除的二級不在管理清單顯示（墓碑仍留在 local.subs 裡，儲存時一併寫回，
   // 供歷史帳目查名稱用）——2.3.0
   const visibleSubs = (local.subs ?? []).filter(s => !s.deleted)
+  // 已刪除的二級：仍列在下方供「復原」（誤刪救回，或雲端回收回來的舊二級）
+  const deletedSubs = (local.subs ?? []).filter(s => s.deleted)
 
   return (
     <>
@@ -195,6 +197,31 @@ export function EditSheet({ draft, isNew, onSave, onDelete, onClose }: {
             >
               <Icon name="plus" size={14} stroke={2.6} /> 新增二級分類
             </button>
+
+            {/* 已刪除的二級 — 標記保留在資料裡（歷史帳目靠它顯示名稱），可一鍵復原 */}
+            {deletedSubs.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, marginBottom: 6 }}>
+                  已刪除（歷史帳目仍會顯示這些名稱）
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {deletedSubs.map(s => (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.muted, textDecoration: 'line-through' }}>
+                        {s.name || '（未命名）'}
+                      </span>
+                      <button
+                        onClick={() => setLocal(restoreSub(local, s.id) as DraftCategory)}
+                        style={{
+                          padding: '6px 12px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                          background: T.bg, color: T.ink, fontSize: 12, fontWeight: 700, fontFamily: T.font.sans,
+                        }}
+                      >復原</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* 預設二級（單選，含「無」） */}
             {visibleSubs.length > 0 && (

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { T, colorMap } from '../lib/tokens'
 import { Icon } from '../components/Icon'
-import { getCategories, saveCategories, deleteCategory } from '../lib/categories'
+import { getCategories, saveCategories, deleteCategory, restoreCategory } from '../lib/categories'
 import { EditSheet, EMPTY_INCOME_DRAFT, EMPTY_EXPENSE_DRAFT } from '../components/CategoryEditSheet'
 import type { DraftCategory } from '../components/CategoryEditSheet'
 import type { Category } from '../types'
@@ -156,6 +156,14 @@ export function CategoriesPage({ onBack, googleEmail, onSyncCategories, onSyncAl
   // 管理清單只列出未刪除的類別（已刪的仍留在儲存層供歷史帳目查名稱）
   const incomeList  = categories.filter(c => c.type === 'income' && !c.deleted)
   const expenseList = categories.filter(c => c.type === 'expense' && !c.deleted)
+  // 已刪除的類別（含雲端孤兒回收補回來的）——列出來讓使用者能復原，也讓「錢還算得到」這件事可見
+  const deletedList = categories.filter(c => c.deleted)
+
+  const handleRestore = (id: string) => {
+    const updated = restoreCategory(categories, id)
+    persist(updated)
+    onSyncCategories(updated)
+  }
 
   return (
     <>
@@ -246,8 +254,42 @@ export function CategoriesPage({ onBack, googleEmail, onSyncCategories, onSyncAl
           </div>
         </div>
 
+        {/* 已刪除的類別 — 資料層是墓碑不是真的刪掉，所以歷史金額照算，也隨時可以復原 */}
+        {deletedList.length > 0 && (
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, padding: '0 4px 8px', letterSpacing: 0.4, textTransform: 'uppercase' as const }}>
+              已刪除
+            </div>
+            <div style={{ background: T.card, borderRadius: T.r.lg, boxShadow: T.shadow.card, overflow: 'hidden' }}>
+              {deletedList.map((cat, i) => (
+                <div
+                  key={cat.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px',
+                    borderBottom: i < deletedList.length - 1 ? `1px solid ${T.hairline}` : 'none',
+                  }}
+                >
+                  <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: T.muted, textDecoration: 'line-through' }}>
+                    {cat.name}
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: T.muted }}>
+                    {cat.type === 'income' ? '收入' : '支出'}
+                  </span>
+                  <button
+                    onClick={() => handleRestore(cat.id)}
+                    style={{
+                      padding: '6px 12px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                      background: T.bg, color: T.ink, fontSize: 12, fontWeight: 700, fontFamily: T.font.sans,
+                    }}
+                  >復原</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div style={{ textAlign: 'center', fontSize: 11, color: T.muted, fontWeight: 600 }}>
-          停用的類別不會出現在記帳頁，但歷史報表仍會保留
+          停用或刪除的類別不會出現在記帳頁，但歷史帳目與月結金額完全保留
         </div>
       </div>
 
