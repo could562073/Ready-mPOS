@@ -56,12 +56,13 @@ export function clearCategoriesDirty(): void {
   localStorage.removeItem(LS_DIRTY)
 }
 
-// 只取某種類型的啟用類別
+// 只取某種類型「可用來記帳」的類別：啟用中且未被刪除。給選單／chips 用。
 export function getEnabledByType(type: 'income' | 'expense'): Category[] {
-  return getCategories().filter(c => c.type === type && c.enabled)
+  return getCategories().filter(c => c.type === type && c.enabled && !c.deleted)
 }
 
-// 取所有歷史出現過的類別（含停用），用於報表顯示
+// 取所有歷史出現過的類別（含停用、含已刪除），用於報表顯示與金額加總。
+// 🔴 這裡**刻意**不濾掉 deleted：舊交易引用的類別若被排除，其金額會從月結消失。
 export function getAllByType(type: 'income' | 'expense'): Category[] {
   return getCategories().filter(c => c.type === type)
 }
@@ -86,7 +87,8 @@ export const COLOR_OPTIONS = [
 ]
 
 // 二級分類型別（繼承一級 icon/color/fee，本身只有 id/name）
-export type Sub = { id: string; name: string }
+// deleted = 軟刪除墓碑（2.3.0）：記帳選單不顯示，但顯示／彙總仍查得到名稱，舊帳目不受影響
+export type Sub = { id: string; name: string; deleted?: boolean }
 
 // 新增二級分類（回傳新 Category，不 mutate 原物件）
 export function addSub(cat: Category, name: string, makeId: () => string = newId): Category {
@@ -99,11 +101,39 @@ export function renameSub(cat: Category, subId: string, name: string): Category 
   return { ...cat, subs: (cat.subs ?? []).map(s => (s.id === subId ? { ...s, name } : s)) }
 }
 
-// 刪除指定二級分類；若它正是預設二級，一併清除 defaultSubId
+// 刪除指定二級分類 —— 軟刪除（標 deleted 墓碑，不從陣列移除，2.3.0）。
+// 🔴 原本是 `filter(s => s.id !== subId)` 硬刪，正式站踩到：刪掉二級後，
+// 歷史交易的 subId 找不到對應 sub，月結成本結構的二級細目直接消失（等於舊資料被抹掉），
+// 而且重建一個同名二級也救不回來（id 不同）。改標記後，記帳選單看不到它，
+// 但顯示／彙總查得到名稱 → 舊帳目的分類完整保留。
+// 若它正是預設二級，一併清除 defaultSubId（否則記帳會帶入一個已刪的二級）。
 export function deleteSub(cat: Category, subId: string): Category {
-  const subs = (cat.subs ?? []).filter(s => s.id !== subId)
+  const subs = (cat.subs ?? []).map(s => (s.id === subId ? { ...s, deleted: true } : s))
   const defaultSubId = cat.defaultSubId === subId ? null : cat.defaultSubId
   return { ...cat, subs, defaultSubId }
+}
+
+// 還原被軟刪除的二級分類（誤刪救回用）
+export function restoreSub(cat: Category, subId: string): Category {
+  const subs = (cat.subs ?? []).map(s => (s.id === subId ? { ...s, deleted: false } : s))
+  return { ...cat, subs }
+}
+
+// 記帳選單可選的二級（排除已刪墓碑）。顯示／彙總請直接用 cat.subs 全集，不要用這個。
+export function liveSubs(cat: Category | undefined): Sub[] {
+  return (cat?.subs ?? []).filter(s => !s.deleted)
+}
+
+// 刪除一級類別 —— 同樣是軟刪除（純函式，回傳新陣列）。
+// 理由同 deleteSub：一級被移除時，月結的 knownIncomeIds/knownExpenseIds 就不再包含它，
+// 該類別的所有歷史金額會從月結總數與趨勢圖無聲消失。標記後金額照算，只是記帳選不到。
+export function deleteCategory(cats: Category[], id: string): Category[] {
+  return cats.map(c => (c.id === id ? { ...c, deleted: true } : c))
+}
+
+// 還原被軟刪除的一級類別（誤刪救回用）
+export function restoreCategory(cats: Category[], id: string): Category[] {
+  return cats.map(c => (c.id === id ? { ...c, deleted: false } : c))
 }
 
 // 設定預設二級（null = 無）
@@ -113,11 +143,16 @@ export function setDefaultSub(cat: Category, subId: string | null): Category {
 
 // 序列化二級清單為 _config 儲存字串：id:encodeURIComponent(name)，多筆以 | 分隔。
 // name 經 encodeURIComponent，容許名稱含 : 或 | 而不破壞格式。
+// 已軟刪除的二級再附加第三段 `:1`（2.3.0）——encodeURIComponent 會把 ':' 轉成 %3A，
+// 故 name 段落內不可能出現裸 ':'，第二個 ':' 之後必定是旗標，解析無歧義。
+// 相容性：舊版（<2.3.0）client 解析時會把 ':1' 併進名稱（顯示成「瓦斯費:1」），
+// 且若由舊版寫回會固化該名稱——僅影響「已刪除」的二級，且正式站只有單一裝置，可接受。
 export function serializeSubs(subs: Sub[]): string {
-  return subs.map(s => `${s.id}:${encodeURIComponent(s.name)}`).join('|')
+  return subs.map(s => `${s.id}:${encodeURIComponent(s.name)}${s.deleted ? ':1' : ''}`).join('|')
 }
 
 // 反序列化 _config 的 subs 欄；容錯：空字串→[]，格式不符的片段略過。
+// 沒有第三段旗標的舊資料一律視為未刪除（向後相容）。
 export function parseSubs(raw: string): Sub[] {
   if (!raw) return []
   return raw
@@ -125,7 +160,12 @@ export function parseSubs(raw: string): Sub[] {
     .map(part => {
       const sep = part.indexOf(':')
       if (sep < 1) return null
-      return { id: part.slice(0, sep), name: decodeURIComponent(part.slice(sep + 1)) }
+      const rest = part.slice(sep + 1)
+      const sep2 = rest.indexOf(':')
+      const nameRaw = sep2 >= 0 ? rest.slice(0, sep2) : rest
+      const deleted = sep2 >= 0 && rest.slice(sep2 + 1) === '1'
+      const sub: Sub = { id: part.slice(0, sep), name: decodeURIComponent(nameRaw) }
+      return deleted ? { ...sub, deleted: true } : sub
     })
     .filter((s): s is Sub => s !== null)
 }

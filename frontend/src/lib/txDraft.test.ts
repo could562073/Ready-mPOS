@@ -45,4 +45,14 @@ describe('pickInitialSub', () => {
   it('無記憶且無有效 defaultSubId → 回 null', () => {
     expect(pickInitialSub(cat({ defaultSubId: null }), undefined)).toBeNull()
   })
+  // 2.3.0 軟刪除：墓碑仍在 subs 裡，但不可被帶進新交易
+  it('記憶指向已軟刪除的二級 → 不帶入，退回 defaultSubId', () => {
+    const c = cat({ subs: [{ id: 's1', name: '瓦斯費', deleted: true }, { id: 's2', name: '水費' }] })
+    expect(pickInitialSub(c, 's1')).toBe('s2')
+  })
+  it('defaultSubId 本身指向已軟刪除的二級 → 回 null', () => {
+    const c = cat({ subs: [{ id: 's2', name: '水費', deleted: true }], defaultSubId: 's2' })
+    expect(pickInitialSub(c, undefined)).toBeNull()
+    expect(resolveDefaultSub(c)).toBeNull()
+  })
 })
