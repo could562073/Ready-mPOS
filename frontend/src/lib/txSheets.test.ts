@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { TX_MONTH_HEADERS, isNewTxFormat, txToRow, rowToTx, mergeTransactionsById, planMonthsToRewrite } from './txSheets'
+import {
+  TX_MONTH_HEADERS, isNewTxFormat, txToRow, rowToTx, mergeTransactionsById, planMonthsToRewrite,
+  categoryHintsFromRow,
+} from './txSheets'
 import type { Category, Transaction } from '../types'
 import type { TxSeed } from './txSheets'
 
@@ -164,5 +167,32 @@ describe('planMonthsToRewrite（改寫月份 gating）', () => {
       allowOldRewrite: true,
     })
     expect(r).toEqual(['2026-07'])
+  })
+})
+
+describe('categoryHintsFromRow — 孤兒類別線索', () => {
+  const header = [...TX_MONTH_HEADERS]
+  const seed: TxSeed = {
+    id: 't1', date: '2026-07-04', type: 'expense', categoryId: 'c9', subId: 's9',
+    amount: 300, syncStatus: 'SYNCED', createdAt: 'x', updatedAt: 'x',
+  }
+
+  it('抽出一級與二級線索：id 取自 seed、名稱取自列上的顯示欄', () => {
+    const row = ['2026-07-04', '支出', '舊食材', '舊二級', '300', '', 't1', 'c9', 's9']
+    expect(categoryHintsFromRow(seed, row, header)).toEqual([
+      { kind: 'primary', id: 'c9', name: '舊食材', type: 'expense' },
+      { kind: 'sub', id: 's9', name: '舊二級', type: 'expense', parentId: 'c9' },
+    ])
+  })
+
+  it('無二級的列只回一級線索', () => {
+    const row = ['2026-07-04', '支出', '舊食材', '', '300', '', 't1', 'c9', '']
+    expect(categoryHintsFromRow({ ...seed, subId: null }, row, header)).toEqual([
+      { kind: 'primary', id: 'c9', name: '舊食材', type: 'expense' },
+    ])
+  })
+
+  it('名稱欄空白或缺欄不炸，回空名稱交由回收端補佔位名', () => {
+    expect(categoryHintsFromRow({ ...seed, subId: null }, ['2026-07-04'], header)[0].name).toBe('')
   })
 })

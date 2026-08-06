@@ -1,6 +1,9 @@
 import type { DailyRecord, Category, Transaction } from '../types'
 import { applyCloudCategories, isCategoriesDirty, clearCategoriesDirty, serializeSubs, parseSubs } from './categories'
-import { TX_MONTH_HEADERS, isNewTxFormat, txToRow, rowToTx, type TxSeed } from './txSheets'
+import {
+  TX_MONTH_HEADERS, isNewTxFormat, txToRow, rowToTx, categoryHintsFromRow,
+  type TxSeed, type CategoryHint,
+} from './txSheets'
 import { explodeDailyRecord } from './migrate'
 import type { WriteDiagnostics } from './syncDiag'
 
@@ -32,7 +35,8 @@ const FIXED_COLS = new Set([COL_DATE, COL_NOTES, COL_ITEM_NOTES, COL_TOTAL_INCOM
 
 // _config tab 欄位順序
 const CONFIG_TAB     = '_config'
-const CONFIG_HEADERS = ['id', 'name', 'icon', 'color', 'fee', 'enabled', 'type', 'subs', 'defaultSub']
+// deleted 為 2.3.0 新增（軟刪除墓碑）；舊表沒有這欄，pull 時一律視為未刪除
+const CONFIG_HEADERS = ['id', 'name', 'icon', 'color', 'fee', 'enabled', 'type', 'subs', 'defaultSub', 'deleted']
 
 interface TokenInfo {
   access_token: string
@@ -358,6 +362,7 @@ export async function pushConfigToSheets(spreadsheetId: string, categories: Cate
       c.type,
       serializeSubs(c.subs ?? []),
       c.defaultSubId ?? '',
+      c.deleted ? 'true' : 'false',   // 軟刪除墓碑（2.3.0）
     ]),
   ]
 
@@ -381,7 +386,7 @@ export async function pullConfigFromSheets(spreadsheetId: string): Promise<Categ
   const token = await acquireToken()
   try {
     const data = await sheetsGet<{ values?: string[][] }>(
-      `/${spreadsheetId}/values/${encodeURIComponent(CONFIG_TAB + '!A1:I')}`,
+      `/${spreadsheetId}/values/${encodeURIComponent(CONFIG_TAB + '!A1:J')}`,   // J = deleted（2.3.0）
       token,
     )
     const rows = data.values ?? []
@@ -406,6 +411,8 @@ export async function pullConfigFromSheets(spreadsheetId: string): Promise<Categ
           type:    (r[idx('type')] === 'expense' ? 'expense' : 'income') as 'income' | 'expense',
           subs:        parseSubs(subsRaw),
           defaultSubId: defRaw || null,
+          // 軟刪除墓碑（2.3.0）；舊表沒有這欄（idx = -1）→ 視為未刪除，向後相容
+          deleted: idx('deleted') >= 0 && r[idx('deleted')] === 'true',
         }
       })
 
@@ -586,7 +593,7 @@ export async function backupSpreadsheet(spreadsheetId: string): Promise<string> 
 // 以及哪些是缺「一級ID」欄的 2.0.0 新格式（需就地升級改寫補 ID 欄——改名防護，無需備份）
 export async function pullAllTransactionsFromSheets(
   spreadsheetId: string, categories: Category[],
-): Promise<{ seeds: TxSeed[]; oldFormatMonths: string[]; upgradeMonths: string[] }> {
+): Promise<{ seeds: TxSeed[]; oldFormatMonths: string[]; upgradeMonths: string[]; categoryHints: CategoryHint[] }> {
   const token = await acquireToken()
   const titles = await getSheetTitles(spreadsheetId, token)
   const monthTabs = titles.filter(t => /^\d{4}-\d{2}$/.test(t))
@@ -596,6 +603,9 @@ export async function pullAllTransactionsFromSheets(
   const seeds: TxSeed[] = []
   const oldFormatMonths: string[] = []
   const upgradeMonths: string[] = []
+  // 孤兒類別線索（2.3.0）：雲端列引用到本機 _config 已無的類別 id 時，
+  // 靠這些線索把類別以墓碑補回來，否則那些金額會被月結的「已知類別 ID」過濾掉而消失
+  const categoryHints: CategoryHint[] = []
 
   for (const month of monthTabs) {
     const data = await sheetsGet<{ values?: string[][] }>(
@@ -609,7 +619,11 @@ export async function pullAllTransactionsFromSheets(
       if (!header.includes('一級ID')) upgradeMonths.push(month)
       for (const row of rows.slice(1)) {
         const seed = rowToTx(row, header, catByName, catById, now)
-        if (seed) seeds.push(seed)
+        if (!seed) continue
+        seeds.push(seed)
+        // 只有新格式列帶得出 id ↔ 名稱的對應；舊彙總格式本來就只有名稱、
+        // 其 categoryId 是靠名稱查回來的，查不到就不是孤兒而是未知欄位，不需回收
+        for (const h of categoryHintsFromRow(seed, row, header)) categoryHints.push(h)
       }
     } else {
       // 舊彙總格式：解析成 DailyRecord 再逐筆拆解為交易，並標記此月需改寫
@@ -619,7 +633,7 @@ export async function pullAllTransactionsFromSheets(
       }
     }
   }
-  return { seeds, oldFormatMonths, upgradeMonths }
+  return { seeds, oldFormatMonths, upgradeMonths, categoryHints }
 }
 
 // 將某月所有交易以新格式整批覆蓋寫入（先 clear 再 put，天然去除筆數變動殘留）

@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   addSub, renameSub, deleteSub, setDefaultSub, serializeSubs, parseSubs,
   restoreSub, liveSubs, deleteCategory, restoreCategory,
+  recoverOrphanCategories, ORPHAN_CATEGORY_NAME,
 } from './categories'
 import type { Category } from '../types'
+import type { CategoryHint } from './txSheets'
 
 const base: Category = { id: 'misc', name: '雜項', icon: 'tag', color: 'coral', enabled: true, type: 'expense' }
 
@@ -97,5 +99,72 @@ describe('二級序列化 round-trip（_config 儲存）', () => {
   it('round-trip 保住含分隔字元的名稱', () => {
     const subs = [{ id: 's1', name: '瓦斯:費|特殊' }]
     expect(parseSubs(serializeSubs(subs))).toEqual(subs)
+  })
+})
+
+// 孤兒回收：救回 2.3.0 之前被硬刪、導致歷史金額從月結消失的分類
+describe('recoverOrphanCategories', () => {
+  const cat = (over: Partial<Category>): Category => ({
+    id: 'c1', name: '雜支', icon: 'tag', color: 'coral', enabled: true, type: 'expense', ...over,
+  })
+  const hint = (over: Partial<CategoryHint>): CategoryHint =>
+    ({ kind: 'primary', id: 'x', name: 'X', type: 'expense', ...over })
+
+  it('全部類別都在 → 回 null（呼叫端可跳過寫入與推送）', () => {
+    expect(recoverOrphanCategories([cat({})], [hint({ id: 'c1', name: '雜支' })])).toBeNull()
+  })
+
+  it('補回缺席的一級類別，標為 deleted 墓碑且不啟用', () => {
+    const out = recoverOrphanCategories([cat({})], [hint({ id: 'gone', name: '舊食材', type: 'expense' })])!
+    expect(out).toHaveLength(2)
+    const rec = out.find(c => c.id === 'gone')!
+    expect(rec.name).toBe('舊食材')
+    expect(rec.type).toBe('expense')
+    expect(rec.deleted).toBe(true)
+    expect(rec.enabled).toBe(false)
+  })
+
+  it('補回缺席的二級，掛在既有一級底下且不動其他欄位', () => {
+    const base = cat({ subs: [{ id: 's1', name: '水費' }], defaultSubId: 's1' })
+    const out = recoverOrphanCategories([base], [hint({ kind: 'sub', id: 's9', name: '瓦斯費', parentId: 'c1' })])!
+    expect(out[0].subs).toEqual([{ id: 's1', name: '水費' }, { id: 's9', name: '瓦斯費', deleted: true }])
+    expect(out[0].defaultSubId).toBe('s1')
+  })
+
+  it('一級與其二級同時缺席 → 兩者都補回（二級掛在剛補的一級底下）', () => {
+    const out = recoverOrphanCategories([], [
+      hint({ id: 'p1', name: '舊類', type: 'income' }),
+      hint({ kind: 'sub', id: 's1', name: '舊二級', type: 'income', parentId: 'p1' }),
+    ])!
+    expect(out).toHaveLength(1)
+    expect(out[0].id).toBe('p1')
+    expect(out[0].subs).toEqual([{ id: 's1', name: '舊二級', deleted: true }])
+  })
+
+  it('二級找不到所屬一級 → 跳過，不產生無主二級', () => {
+    expect(recoverOrphanCategories([cat({})], [hint({ kind: 'sub', id: 's9', name: 'x', parentId: 'nope' })])).toBeNull()
+  })
+
+  it('同一 id 出現多次（多列引用）只補一次', () => {
+    const h = hint({ id: 'gone', name: '舊食材' })
+    const out = recoverOrphanCategories([], [h, h, h])!
+    expect(out).toHaveLength(1)
+  })
+
+  it('名稱欄空白 → 用佔位名，至少讓金額回到月結', () => {
+    const out = recoverOrphanCategories([], [hint({ id: 'gone', name: '' })])!
+    expect(out[0].name).toBe(ORPHAN_CATEGORY_NAME)
+  })
+
+  it('id 空字串 → 忽略（不是有效引用）', () => {
+    expect(recoverOrphanCategories([], [hint({ id: '' })])).toBeNull()
+  })
+
+  it('不 mutate 傳入的陣列與物件', () => {
+    const base = cat({ subs: [{ id: 's1', name: '水費' }] })
+    const input = [base]
+    recoverOrphanCategories(input, [hint({ kind: 'sub', id: 's9', name: 'x', parentId: 'c1' })])
+    expect(input).toHaveLength(1)
+    expect(base.subs).toEqual([{ id: 's1', name: '水費' }])
   })
 })

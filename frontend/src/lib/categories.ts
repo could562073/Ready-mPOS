@@ -1,4 +1,5 @@
 import type { Category } from '../types'
+import type { CategoryHint } from './txSheets'   // 型別匯入，編譯後抹除，不產生執行期循環相依
 import type { DailyRecord } from '../types'
 import { newId } from './ids'
 
@@ -134,6 +135,67 @@ export function deleteCategory(cats: Category[], id: string): Category[] {
 // 還原被軟刪除的一級類別（誤刪救回用）
 export function restoreCategory(cats: Category[], id: string): Category[] {
   return cats.map(c => (c.id === id ? { ...c, deleted: false } : c))
+}
+
+// 名稱欄也空白的孤兒才用這個佔位名（至少讓金額回到月結，不至於顯示空字串）
+export const ORPHAN_CATEGORY_NAME = '（已刪除類別）'
+
+/**
+ * 孤兒類別回收（2.3.0）——救回「升級前就被硬刪掉」的分類。
+ *
+ * 2.3.0 之前刪除分類是把它從 _config 整筆移除，但雲端月份分頁的列還留著
+ * 一級ID/二級ID 與顯示名稱。那些交易於是引用了不存在的類別，而月結是用
+ * 「已知類別 ID 集合」加總的 → 金額直接從總收入/總支出/趨勢圖消失。
+ * 這裡依雲端列提供的線索，把缺席的類別以 `deleted:true` 墓碑補回來：
+ * 記帳選單看不到它（本來就是使用者刪掉的），但顯示與加總重新認得它 → 金額回來。
+ *
+ * 回傳 null = 沒有任何缺漏（呼叫端可跳過寫入與推送）。
+ */
+export function recoverOrphanCategories(cats: Category[], hints: CategoryHint[]): Category[] | null {
+  const byId = new Map(cats.map(c => [c.id, c]))
+  const added: Category[] = []
+  let changed = false
+
+  // 先補一級（二級要掛在一級底下，順序不可顛倒）
+  for (const h of hints) {
+    if (h.kind !== 'primary' || !h.id || byId.has(h.id)) continue
+    const cat: Category = {
+      id: h.id,
+      name: h.name || ORPHAN_CATEGORY_NAME,
+      icon: 'tag',
+      color: h.type === 'income' ? 'mint' : 'coral',
+      enabled: false,          // 不啟用：這是使用者刪過的類別，只為歷史帳目而存在
+      type: h.type,
+      subs: [],
+      defaultSubId: null,
+      deleted: true,
+    }
+    byId.set(cat.id, cat)
+    added.push(cat)
+    changed = true
+  }
+
+  // 再補二級：掛回所屬一級（找不到一級就跳過，避免產生無主的二級）
+  const subsToAdd = new Map<string, Sub[]>()
+  for (const h of hints) {
+    if (h.kind !== 'sub' || !h.id || !h.parentId) continue
+    const parent = byId.get(h.parentId)
+    if (!parent) continue
+    const already = (parent.subs ?? []).some(s => s.id === h.id)
+      || (subsToAdd.get(h.parentId) ?? []).some(s => s.id === h.id)
+    if (already) continue
+    const list = subsToAdd.get(h.parentId) ?? []
+    list.push({ id: h.id, name: h.name || ORPHAN_CATEGORY_NAME, deleted: true })
+    subsToAdd.set(h.parentId, list)
+    changed = true
+  }
+
+  if (!changed) return null
+
+  return [...cats, ...added].map(c => {
+    const extra = subsToAdd.get(c.id)
+    return extra ? { ...c, subs: [...(c.subs ?? []), ...extra] } : c
+  })
 }
 
 // 設定預設二級（null = 無）

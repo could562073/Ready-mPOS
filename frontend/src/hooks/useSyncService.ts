@@ -29,7 +29,10 @@ import {
   type WriteDiagnostics,
   type WriteFailureKind,
 } from '../lib/syncDiag'
-import { getCategories, isCategoriesDirty, clearCategoriesDirty } from '../lib/categories'
+import {
+  getCategories, isCategoriesDirty, clearCategoriesDirty,
+  saveCategories, recoverOrphanCategories,
+} from '../lib/categories'
 import type { Category } from '../types'
 
 // 試算表名稱由 Vite build mode 注入，單一事實來源 = frontend/.env.*
@@ -202,11 +205,28 @@ export function useSyncService() {
 
       // 取得類別設定：優先從雲端 _config 拉取，fallback 用 localStorage
       const cloudCategories = await pullConfigFromSheets(sheetId)
-      const categories = cloudCategories ?? getCategories()
+      let categories = cloudCategories ?? getCategories()
 
       // ── Pull：Sheets → 本機 transactions（以 Transaction.id 去重對帳） ──
       // SYNCED 交易以雲端為主；PENDING 本機修改優先，不覆蓋（mergeTransactionsById 已處理判斷）
-      const { seeds, oldFormatMonths, upgradeMonths } = await pullAllTransactionsFromSheets(sheetId, categories)
+      const { seeds, oldFormatMonths, upgradeMonths, categoryHints } =
+        await pullAllTransactionsFromSheets(sheetId, categories)
+
+      // 🔴 孤兒類別回收（2.3.0）：雲端交易列引用到 _config 已經沒有的類別 id
+      //（2.3.0 之前刪類別是硬刪造成的），就依列上的名稱把它以 deleted 墓碑補回來。
+      // 不補的話，月結用「已知類別 ID 集合」加總時會把那些金額整批濾掉 → 舊帳目看起來憑空消失。
+      // 補回後才做下面的月份改寫：txToRow 只在類別可解析時才寫「一級ID」欄，
+      // 若帶著孤兒去改寫，會把該欄清空、連最後的線索都弄丟。
+      const recovered = recoverOrphanCategories(categories, categoryHints)
+      if (recovered) {
+        categories = recovered
+        saveCategories(recovered)   // 標 dirty：即使下面推送失敗，回收結果仍留在本機，下次同步再推
+        try {
+          await pushConfigToSheets(sheetId, recovered)
+        } catch (err) {
+          console.error('[sync-config] recover push failed:', err)
+        }
+      }
       const localTx = await db.transactions.toArray()
       const plan = mergeTransactionsById(localTx, seeds)
       if (plan.toAdd.length) await db.transactions.bulkAdd(plan.toAdd)
