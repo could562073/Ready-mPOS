@@ -4,7 +4,7 @@
 
 > **架構**：純前端 PWA，無後端伺服器。IndexedDB 離線儲存 + Google Sheets 雲端同步。
 >
-> **版本**：`2.2.2`（SemVer）。沿革：`2.1.0` 月結分析對帳報表 → `2.2.0` 移除首頁＋拔除分潤（外送手續費）機制 → `2.2.1` 修客戶端「每存一筆就跳資料升級中」無窮迴圈 stop-gap ＋ 遠端錯誤回報上線 → `2.2.2` 雲端寫入 403 診斷探針＋同步失敗使用者提示（詳見下方「近期版本」）。版本號單一事實來源＝`frontend/package.json`，設定頁底部顯示。
+> **版本**：`2.3.0`（SemVer）。沿革：`2.1.0` 月結分析對帳報表 → `2.2.0` 移除首頁＋拔除分潤（外送手續費）機制 → `2.2.1` 修客戶端「每存一筆就跳資料升級中」無窮迴圈 stop-gap ＋ 遠端錯誤回報上線 → `2.2.2` 雲端寫入 403 診斷探針＋同步失敗使用者提示 → `2.3.0` 分類軟刪除墓碑＋孤兒類別回收（修「刪分類害舊帳目金額從月結消失」）（詳見下方「近期版本」）。版本號單一事實來源＝`frontend/package.json`，設定頁底部顯示。
 
 ## Tech Stack
 
@@ -33,13 +33,16 @@ Ready-mPOS/
 │   ├── public/
 │   │   └── sw.js              # Service Worker（打烊提醒推播通知）
 │   └── src/
-│       ├── pages/             # DashboardPage, LedgerPage, DailyEntryPage(舊), MonthlyReportPage
+│       ├── pages/             # LedgerPage（落地頁）, DailyEntryPage(舊), MonthlyReportPage
 │       │                      # SettingsPage, CategoriesPage, OnboardingPage
 │       ├── hooks/             # useDailyRecord, useMonthlyRecords, useTransactions, useSyncService
-│       ├── lib/               # sheets, categories, notification, tokens, fmt, ids, migrate, txDraft, txSheets, transactions
-│       ├── components/        # Icon, TransactionSheet, CategoryEditSheet
+│       ├── lib/               # sheets, categories（含軟刪除墓碑/孤兒回收）, notification, tokens, fmt, ids,
+│       │                      # migrate, txDraft, txSheets, transactions, calendar, aggregate,
+│       │                      # closedDays, monthReport, subMemory, syncDiag, errorReport
+│       ├── components/        # Icon, TransactionSheet, CategoryEditSheet, MonthCalendar,
+│       │                      # MissingDaysCard, CostStructureCard, SyncErrorBanner
 │       ├── db/                # Dexie.js schema（v3：transactions 逐筆交易 + 自動遷移）
-│       └── types/             # Transaction, DailyRecord, Category（含二級 subs）, SyncStatus
+│       └── types/             # Transaction, DailyRecord, Category（含二級 subs / deleted 墓碑）, SyncStatus
 └── docs/                      # ADR 架構決策紀錄 + superpowers specs/plans
 ```
 
@@ -50,9 +53,10 @@ Ready-mPOS/
 | 每日收入記錄 | ✅ |
 | 每日支出記錄 | ✅ |
 | 動態類別管理（新增、編輯、刪除、啟用停用） | ✅ |
-| 外送平台手續費自動扣除（每類別可設費率） | ✅ |
-| 每日淨額 / 扣手續費後實收淨額 | ✅ |
-| 首頁 7 天收入趨勢（漲跌幅百分比） | ✅ |
+| 類別／二級軟刪除墓碑（刪除後歷史帳目金額完全保留，可復原） | ✅ 2.3.0 |
+| 外送平台手續費自動扣除（每類別可設費率） | ❌ 2.2.0 拔除（撥款已是分潤後淨額） |
+| 每日淨額 | ✅ |
+| 首頁 7 天收入趨勢（漲跌幅百分比） | ❌ 2.2.0 移除首頁 |
 | 月結報表 | ✅ |
 | 離線優先 IndexedDB 儲存 | ✅ |
 | Google Sheets 雙向同步（儲存後即時上傳） | ✅ |
@@ -259,7 +263,7 @@ Ready-mPOS/
 
 第 2 次優化（逐筆交易改造）至此 **Phase 1–7 全部完成**。cutover 已於 2026-07-11 執行（使用者核准）：併回 `main` + tag `v2.0.0`，正式站 production build 自動採用正式表名，真實資料由自動遷移（備份→改寫→阻擋層）處理。
 
-## 近期版本（2.1 → 2.2.x）
+## 近期版本（2.1 → 2.3）
 
 - **2.1.0** — 月結分析對帳報表：未記帳日卡（固定週公休＋臨時逐日標記）、成本結構卡（二級細目／支出佔收入比／vs 上月增減）、Hero vs 上月淨額。
 - **2.2.0** — **移除首頁** tab（導覽剩 帳目／月結／設定，`DashboardPage.tsx` 已刪）＋**拔除分潤（外送手續費）機制**：撥款已是分潤後淨額、手續費扣抵不成立，帳目頁小計／月結／類別管理均移除手續費，`Category.fee` 型別欄與 Sheets `_config` fee 欄保留供既有雲端資料相容但不再讀取。
@@ -270,6 +274,12 @@ Ready-mPOS/
   - **使用者可見提示**（`components/SyncErrorBanner.tsx`）：同步失敗時跨所有 tab 顯示琥珀色橫幅（非紅色——資料安全存在本機，不是遺失），依分類給對應說法（如「Google 雲端硬碟空間已滿…請清理後重開 App，會自動補傳」），下輪同步成功自動消失。
   - ⚠️ 本版**刻意只做觀測、不猜著修**（systematic debugging）：假設是客戶 Google 帳號空間爆滿導致 Drive 轉唯讀，但 Google 只回泛用 `PERMISSION_DENIED`，故先取證再說。
   - ✅ **2026-08-05 取證完成、根因確認**：客戶端寄回兩封帶診斷欄位的信，`kind: QUOTA_FULL`——`quotaLimit` 15.000 GiB、`quotaUsage` 15.003 GiB（**僅超標約 3.32 MB**）、`canEdit: true`、`ownedByMe: true`、`trashed: false`、scopes 含 `spreadsheets`；`oldMonthCount:1` 自 07-29 起未變＝遷移從未完成。**已向客戶本人確認 Google 帳號容量滿載**。因果與原假設**相反**：不是備份機制把硬碟塞滿，而是硬碟本來就滿 → 備份一次都沒成功過（連一張備份表都沒建出來）。🔴 **Part C（單一固定備份表反覆覆蓋）作廢**：覆蓋既有備份表同樣是寫入，容量滿時一樣 403，修不了任何東西。
+- **2.3.0** — **分類軟刪除墓碑 ＋ 孤兒類別回收**。起因：客戶回報「刪掉二級分類後，原本記在該二級的舊資料跟著不見」。查下去比回報的更嚴重——
+  - **刪一級會讓那些金額整批從月結消失**：月結用「現存類別 ID 集合」加總（`dayIncome`/`dayExpense` 的防污染機制），類別一被移除，總收入／總支出／趨勢圖／淨額／vs 上月全部少掉那筆錢；而帳目頁當日小計是全部 reduce **不過濾** → **兩頁對不起來**。刪二級則讓交易的 `subId` 變 dangling、成本結構歸入「（未分類）」，**重建同名二級也救不回**（新 sub 是新 id）。
+  - **修法＝沿用專案既有的墓碑做法**（同交易刪除的 `DELETED`）：`Category`／`Sub` 加 `deleted` 旗標，刪除＝標記不移除。🔴 **關鍵不對稱**——**選單只顯示未刪的**，**顯示與加總一律用含已刪的全集**；這個不對稱就是「使用者看不到已刪類別、但錢照算」的全部機制。
+  - **跨裝置**：`_config` 加第 10 欄 `deleted`（舊表沒這欄＝視為未刪，向後相容）；二級旗標搭在既有序列化字串成第三段 `id:name:1`。
+  - **孤兒回收**（救回升級前就被硬刪的）：pull 時從雲端交易列抽「類別 ID + 顯示名稱」線索，把 `_config` 已無、卻仍被交易引用的類別以墓碑補回 → **雲端層本來就是安全的**（id 來回不會被抹掉），壞掉的只有解讀層，所以不需要資料救援工程。🔴 回收必須**排在月份改寫之前**，否則改寫會把類別 ID 欄清空、連最後的線索都丟失。
+  - **UI**：類別管理頁新增「已刪除」區塊可一鍵復原、類別編輯 Sheet 內列出已刪二級可復原；刪除確認文案改為誠實版本（原本寫「歷史帳目不受影響」是騙人的）。另修 `markAllRecordsPending` 還指著 Phase 5/7 已廢棄的 `db.dailyRecords`（＝「改類別後保護本機金額」其實早就不存在），並排除 `DELETED` 墓碑以免已刪交易復活。
 
 ## Git 分支流程
 

@@ -68,6 +68,33 @@ export function rowToTx(
   }
 }
 
+// ── 孤兒類別回收（2.3.0）──────────────────────────────────
+// 2.3.0 之前刪除類別是硬刪，_config 裡整筆消失，但月份分頁的列還留著它的
+// 一級ID/二級ID 與名稱。那些交易於是引用了不存在的類別 → 金額從月結蒸發。
+// 這裡把「列上的 id + 名稱」抽成線索，讓 recoverOrphanCategories 能補回墓碑類別，
+// 救回客戶在升級前已經刪掉的分類（名稱直接沿用雲端列上的顯示名稱）。
+export interface CategoryHint {
+  kind: 'primary' | 'sub'
+  id: string
+  name: string
+  type: 'income' | 'expense'
+  parentId?: string        // kind='sub' 時為所屬一級的 id
+}
+
+// 從「已解析的交易 seed + 原始列」抽出類別線索。
+// id 一律取自 seed（= 交易實際引用的值，與 rowToTx 的解析結果一致，不會自己再推一次），
+// 名稱取自列上的顯示欄位。
+export function categoryHintsFromRow(seed: TxSeed, row: string[], header: string[]): CategoryHint[] {
+  const g = (col: string) => (row[header.indexOf(col)] ?? '').trim()
+  const hints: CategoryHint[] = [
+    { kind: 'primary', id: seed.categoryId, name: g('一級類別'), type: seed.type },
+  ]
+  if (seed.subId) {
+    hints.push({ kind: 'sub', id: seed.subId, name: g('二級類別'), type: seed.type, parentId: seed.categoryId })
+  }
+  return hints
+}
+
 export interface TxMergePlan {
   toAdd: TxSeed[]
   toUpdate: { localId: number; seed: TxSeed }[]

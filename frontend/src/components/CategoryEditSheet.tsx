@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { T, colorMap } from '../lib/tokens'
 import { Icon } from './Icon'
-import { ICON_OPTIONS, COLOR_OPTIONS, addSub, renameSub, deleteSub, setDefaultSub } from '../lib/categories'
+import { ICON_OPTIONS, COLOR_OPTIONS, addSub, renameSub, deleteSub, restoreSub, setDefaultSub } from '../lib/categories'
 
 export interface DraftCategory {
   id: string
@@ -11,7 +11,7 @@ export interface DraftCategory {
   fee?: number
   enabled: boolean
   type: 'income' | 'expense'
-  subs?: { id: string; name: string }[]
+  subs?: { id: string; name: string; deleted?: boolean }[]  // deleted = 軟刪除墓碑（2.3.0）
   defaultSubId?: string | null
 }
 
@@ -77,6 +77,11 @@ export function EditSheet({ draft, isNew, onSave, onDelete, onClose }: {
   const [local, setLocal] = useState<DraftCategory>(draft)
   const update = (patch: Partial<DraftCategory>) => setLocal(prev => ({ ...prev, ...patch }))
   const previewColor = colorMap[local.color] ?? colorMap['mint']
+  // 已軟刪除的二級不在管理清單顯示（墓碑仍留在 local.subs 裡，儲存時一併寫回，
+  // 供歷史帳目查名稱用）——2.3.0
+  const visibleSubs = (local.subs ?? []).filter(s => !s.deleted)
+  // 已刪除的二級：仍列在下方供「復原」（誤刪救回，或雲端回收回來的舊二級）
+  const deletedSubs = (local.subs ?? []).filter(s => s.deleted)
 
   return (
     <>
@@ -147,14 +152,14 @@ export function EditSheet({ draft, isNew, onSave, onDelete, onClose }: {
           {/* 二級分類（繼承一級 icon/color/fee，只編輯名稱與預設） */}
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8 }}>二級分類</div>
-            {(local.subs ?? []).length === 0 && (
+            {visibleSubs.length === 0 && (
               <div style={{ fontSize: 11, color: T.muted, fontWeight: 500, marginBottom: 8 }}>
                 可選。例如「雜項」下加「瓦斯費」「水費」，記帳時就能選到。
               </div>
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {(local.subs ?? []).map(s => (
+              {visibleSubs.map(s => (
                 <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input
                     value={s.name}
@@ -193,12 +198,37 @@ export function EditSheet({ draft, isNew, onSave, onDelete, onClose }: {
               <Icon name="plus" size={14} stroke={2.6} /> 新增二級分類
             </button>
 
+            {/* 已刪除的二級 — 標記保留在資料裡（歷史帳目靠它顯示名稱），可一鍵復原 */}
+            {deletedSubs.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, marginBottom: 6 }}>
+                  已刪除（歷史帳目仍會顯示這些名稱）
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {deletedSubs.map(s => (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.muted, textDecoration: 'line-through' }}>
+                        {s.name || '（未命名）'}
+                      </span>
+                      <button
+                        onClick={() => setLocal(restoreSub(local, s.id) as DraftCategory)}
+                        style={{
+                          padding: '6px 12px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                          background: T.bg, color: T.ink, fontSize: 12, fontWeight: 700, fontFamily: T.font.sans,
+                        }}
+                      >復原</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* 預設二級（單選，含「無」） */}
-            {(local.subs ?? []).length > 0 && (
+            {visibleSubs.length > 0 && (
               <div style={{ marginTop: 12 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8 }}>記帳時預設帶入</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {([{ id: null as string | null, name: '無' }, ...(local.subs ?? [])]).map(opt => {
+                  {([{ id: null as string | null, name: '無' }, ...visibleSubs]).map(opt => {
                     const selected = (local.defaultSubId ?? null) === opt.id
                     return (
                       <button
@@ -237,9 +267,11 @@ export function EditSheet({ draft, isNew, onSave, onDelete, onClose }: {
           <button
             onClick={() => {
               if (!local.name.trim()) return
-              // 儲存時把二級名稱 trim、丟掉空白項；若預設二級已被刪/清空則歸零
+              // 儲存時把二級名稱 trim、丟掉空白項；若預設二級已被刪/清空則歸零。
+              // 🔴 墓碑（deleted）必須保留：它是歷史帳目查二級名稱的唯一來源，
+              // 但不得被選為預設二級（下一行的 !s.deleted）。
               const subs = (local.subs ?? []).map(s => ({ ...s, name: s.name.trim() })).filter(s => s.name)
-              const defaultSubId = subs.some(s => s.id === local.defaultSubId) ? local.defaultSubId! : null
+              const defaultSubId = subs.some(s => s.id === local.defaultSubId && !s.deleted) ? local.defaultSubId! : null
               onSave({ ...local, subs, defaultSubId })
             }}
             disabled={!local.name.trim()}
