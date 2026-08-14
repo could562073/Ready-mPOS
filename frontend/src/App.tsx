@@ -55,7 +55,7 @@ function App() {
     googleEmail, signIn, signOut, signInError, creating,
     restoring, restoreFromSheets,
     migrating, migrateMsg,
-    syncError, dismissSyncError, syncPaused, retryNow,
+    syncError, dismissSyncError, syncPaused, lastSyncOk, retryNow,
     clearLocalData,
     isConfigured, setCustomSheet,
   } = useSyncService()
@@ -108,7 +108,12 @@ function App() {
         {tab === 'settings' && subPage === null && (
           <SettingsPage
             syncing={syncing}
-            onSync={syncAll}
+            // 設定頁的「同步」是使用者主動按的 → 走 retryNow 無視暫停閘門。
+            // 若走 syncAll，暫停期間按了會毫無反應，客戶只會覺得按鈕壞了。
+            onSync={retryNow}
+            syncPaused={syncPaused}
+            lastSyncOk={lastSyncOk}
+            syncErrorMessage={syncError?.message ?? null}
             googleEmail={googleEmail}
             onSignIn={signIn}
             onSignOut={signOut}

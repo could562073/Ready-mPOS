@@ -4,6 +4,7 @@ import { Icon } from '../components/Icon'
 import { db } from '../db'
 import { getPermission, requestPermission, sendReminderToSW } from '../lib/notification'
 import { getWeeklyClosed, setWeeklyClosed } from '../lib/closedDays'
+import type { SyncPauseState } from '../lib/syncPause'
 
 interface Props {
   syncing: boolean
@@ -19,6 +20,33 @@ interface Props {
   onClearLocal: () => Promise<void>
   onSetCustomSheet: (id: string, name: string) => void
   onNavigateCategories: () => void
+  // ── 2.4.0 同步狀態 ──
+  /** 自動同步暫停狀態，null = 正常 */
+  syncPaused: SyncPauseState | null
+  /** 上次同步成功時間（ms），null = 從未成功 */
+  lastSyncOk: number | null
+  /** 上次同步失敗的說明（null = 目前無錯誤） */
+  syncErrorMessage: string | null
+}
+
+// 「幾分鐘前／幾小時前」——老闆看的是「剛剛有沒有上雲」，不是精確時間戳
+function timeAgo(ts: number, now: number): string {
+  const min = Math.floor((now - ts) / 60000)
+  if (min < 1)   return '剛剛'
+  if (min < 60)  return `${min} 分鐘前`
+  const hr = Math.floor(min / 60)
+  if (hr < 24)   return `${hr} 小時前`
+  return `${Math.floor(hr / 24)} 天前`
+}
+
+// 暫停成因的短標籤（完整說明在橫幅，這裡只要一眼看懂）
+function pauseLabel(kind: SyncPauseState['kind']): string {
+  switch (kind) {
+    case 'QUOTA_FULL':         return '雲端空間已滿'
+    case 'NO_EDIT_PERMISSION': return '沒有試算表編輯權'
+    case 'SCOPE_MISSING':      return 'Google 授權不足'
+    default:                   return '同步失敗'
+  }
 }
 
 // 通用設定列元件（對齊原型 SettingRow）
@@ -93,6 +121,7 @@ export function SettingsPage({
   googleEmail, onSignIn, onSignOut, signInError, isConfigured, creating,
   restoring, onRestore, onClearLocal,
   onSetCustomSheet, onNavigateCategories,
+  syncPaused, lastSyncOk, syncErrorMessage,
 }: Props) {
   const [signingIn,    setSigningIn]    = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -115,6 +144,8 @@ export function SettingsPage({
   const [draftName,      setDraftName]      = useState('')
   const [draftOwner,     setDraftOwner]     = useState('')
   const [recordCount,    setRecordCount]    = useState(0)
+  // 2.4.0：待上傳筆數（PENDING 交易 + 尚未寫回雲端的 DELETED 墓碑）
+  const [pendingCount,   setPendingCount]   = useState(0)
 
   // 每週公休日（0=週日…6=週六）；勾選的星期在月結「未記帳日」檢查中永久排除
   const [weeklyClosed, setWeeklyClosedState] = useState<number[]>(() => getWeeklyClosed())
@@ -126,9 +157,27 @@ export function SettingsPage({
     setWeeklyClosedState(getWeeklyClosed()) // 讀回（已去重排序）
   }
 
+  // 🔴 2.4.0 修正：原本讀 `db.dailyRecords.count()` —— 那是 Phase 5/7 起已廢棄的死表
+  //    （只剩 cutover 前的殘留列，之後再也不寫入），所以「已記帳 N 天」自逐筆交易改造後
+  //    就一直顯示舊數字、記再多天也不會動。改由 transactions 算不重複日期。
+  //    順帶算出待上傳筆數：同步暫停期間，這個數字是客戶唯一能確認「東西還在、只是沒上雲」的憑據。
   useEffect(() => {
-    db.dailyRecords.count().then(setRecordCount)
-  }, [])
+    let alive = true
+    db.transactions.toArray().then(txs => {
+      if (!alive) return
+      const days = new Set<string>()
+      let pending = 0
+      for (const t of txs) {
+        // 墓碑不計入天數，但它確實還沒寫回雲端 → 算進待上傳
+        if (t.syncStatus === 'DELETED') { pending++; continue }
+        days.add(t.date)
+        if (t.syncStatus === 'PENDING') pending++
+      }
+      setRecordCount(days.size)
+      setPendingCount(pending)
+    })
+    return () => { alive = false }
+  }, [syncing, lastSyncOk])
 
   const handleEditProfile = () => {
     setDraftName(restaurantName)
@@ -440,6 +489,40 @@ export function SettingsPage({
               <Icon name="sync" size={12} stroke={2.6} />
               {syncing ? '同步中…' : '同步'}
             </button>
+          </div>
+
+          {/* 🔴 同步狀態區（2.4.0）：在此之前，「帳目到底有沒有上雲」在 App 裡完全查不到——
+              同步靜靜失敗、客戶靜靜以為早就同步好了。這幾行就是要讓那件事隨時可查證。 */}
+          <div style={{
+            marginTop: 10, padding: '10px 12px', borderRadius: 14,
+            background: syncPaused ? T.sunSoft : T.bg,
+            display: 'flex', flexDirection: 'column', gap: 4,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: 4, flexShrink: 0,
+                background: syncPaused ? T.sun : T.mint,
+              }} />
+              <span style={{ fontSize: 12, fontWeight: 800, color: syncPaused ? T.sunInk : T.ink }}>
+                {syncPaused ? `自動同步已暫停：${pauseLabel(syncPaused.kind)}` : '自動同步正常'}
+              </span>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: syncPaused ? T.sunInk : T.muted, lineHeight: 1.6 }}>
+              上次成功同步：{lastSyncOk ? timeAgo(lastSyncOk, Date.now()) : '尚無紀錄'}
+              {/* 待上傳筆數＝暫停期間客戶唯一的「東西沒不見」憑據，0 筆時不佔版面 */}
+              {pendingCount > 0 && `　·　${pendingCount} 筆待上傳`}
+            </div>
+            {syncPaused && (
+              <div style={{ fontSize: 11, fontWeight: 600, color: T.sunInk, lineHeight: 1.6 }}>
+                帳目都安全存在本機。排除問題後按上方「同步」即可立即補傳，重開 App 也會自動恢復。
+              </div>
+            )}
+            {/* 上次錯誤原文（非暫停成因也要看得到，例如暫時性的網路失敗） */}
+            {!syncPaused && syncErrorMessage && (
+              <div style={{ fontSize: 11, fontWeight: 600, color: T.muted, lineHeight: 1.6 }}>
+                上次錯誤：{syncErrorMessage}
+              </div>
+            )}
           </div>
 
           {/* 進階設定 collapse（還原 / 清除 / 自訂 sheet / 登出） */}
