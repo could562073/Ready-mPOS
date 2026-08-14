@@ -55,7 +55,7 @@ function App() {
     googleEmail, signIn, signOut, signInError, creating,
     restoring, restoreFromSheets,
     migrating, migrateMsg,
-    syncError, dismissSyncError,
+    syncError, dismissSyncError, syncPaused, retryNow,
     clearLocalData,
     isConfigured, setCustomSheet,
   } = useSyncService()
@@ -90,7 +90,14 @@ function App() {
       <div style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))', paddingTop: 16 }}>
         {/* 同步失敗提示：跨所有 tab 顯示——帳目上不了雲是全域狀態，不該只在某一頁看得到 */}
         {syncError && (
-          <SyncErrorBanner kind={syncError.kind} message={syncError.message} onDismiss={dismissSyncError} />
+          <SyncErrorBanner
+            kind={syncError.kind}
+            message={syncError.message}
+            paused={syncPaused !== null}
+            retrying={syncing}
+            onRetry={retryNow}
+            onDismiss={dismissSyncError}
+          />
         )}
         {tab === 'daily' && (
           <LedgerPage date={dailyDate} onDateChange={setDailyDate} onSync={syncAll} />

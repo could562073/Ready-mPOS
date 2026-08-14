@@ -56,6 +56,17 @@ export function markAndCheck(
 
 // ── 以下為含環境相依（localStorage/navigator/fetch/import.meta.env）的薄封裝，不進單元測試 ──
 
+// 回報端點是否已設定（dev/staging 留空＝不回報）。
+// 2.4.0：UI 用它決定要不要對使用者說「此問題已自動回報給開發者」——沒有回報管線的環境
+// 就不該講這句話，寧可少說也不能說謊。
+export function isErrorReportEnabled(): boolean {
+  try {
+    return !!import.meta.env.VITE_ERROR_REPORT_URL
+  } catch {
+    return false
+  }
+}
+
 const sessionSeen = new Set<string>()
 
 function appVersion(): string {
