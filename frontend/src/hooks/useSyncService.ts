@@ -222,7 +222,18 @@ export function useSyncService() {
    */
   const runSync = useCallback(async (manual: boolean) => {
     // sheetId 有效性延到取得 token 後、於 ensureValidSpreadsheet 檢查（垃圾桶/刪除自我修復），此處不擋
-    if (lockRef.current || !navigator.onLine || !getSignedInEmail()) return
+    if (lockRef.current || !navigator.onLine || !getSignedInEmail()) {
+      // 🔴 手動重試不能無聲無息：客戶按了「立即重試」卻什麼都沒發生，只會以為按鈕壞了。
+      //    離線／未登入是使用者自己能處理的狀況，直接講白。（自動同步照舊安靜略過。）
+      if (manual && !lockRef.current) {
+        if (!navigator.onLine) {
+          setSyncError({ kind: 'UNKNOWN', message: '目前沒有網路連線，帳目已安全存在本機，連上網路後會自動補傳。' })
+        } else if (!getSignedInEmail()) {
+          setSyncError({ kind: 'UNKNOWN', message: '尚未登入 Google，帳目只存在本機。請在下方登入後再同步。' })
+        }
+      }
+      return
+    }
 
     // 🔴 暫停閘門（2.4.0）：容量滿時，每筆記帳都完整跑一輪必定失敗的同步（含 3 個診斷探針）
     //    毫無意義。但**刻意不是全停**——每次開 App 仍放行一次心跳，同一 session 每 6h 再一次，
