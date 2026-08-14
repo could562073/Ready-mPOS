@@ -30,6 +30,11 @@ import {
   type WriteFailureKind,
 } from '../lib/syncDiag'
 import {
+  shouldPauseFor, allowHeartbeat, getPause, markPaused, clearPause,
+  markHeartbeatTried, getLastSyncOk, setLastSyncOk,
+  type SyncPauseState,
+} from '../lib/syncPause'
+import {
   getCategories, isCategoriesDirty, clearCategoriesDirty,
   saveCategories, recoverOrphanCategories,
 } from '../lib/categories'
@@ -88,8 +93,18 @@ export function useSyncService() {
   const [migrateMsg, setMigrateMsg]   = useState('')
   // 同步失敗的「使用者可見」狀態（2.2.2）：在此之前同步失敗只寫 console + 寄診斷信，
   // 客戶端完全無感——帳目一直停在本機 PENDING 卻以為已經上雲。null = 目前正常。
-  const [syncError, setSyncError]     = useState<{ kind: WriteFailureKind; message: string } | null>(null)
+  // 2.4.0：初始值改由持久化的暫停狀態還原 —— 容量滿這種問題不會自己好，橫幅必須「常駐」
+  // （重開 App 仍在），否則客戶關掉一次就再也不知道帳目其實沒上雲。
+  const [syncError, setSyncError]     = useState<{ kind: WriteFailureKind; message: string } | null>(() => {
+    const p = getPause()
+    return p ? { kind: p.kind, message: writeFailureMessage(p.kind) } : null
+  })
+  // 2.4.0：自動同步暫停狀態（設定頁狀態區 + 橫幅文案用）與上次成功同步時間
+  const [syncPaused, setSyncPaused]   = useState<SyncPauseState | null>(() => getPause())
+  const [lastSyncOk, setLastSyncOkState] = useState<number | null>(() => getLastSyncOk())
   const lockRef = useRef(false)
+  // 暫停期間「本次 App 開啟已放行過一次心跳」的旗標（session 級，重開 App 自動重置）
+  const pausedSessionTriedRef = useRef(false)
   // 🔴 遷移只嘗試一次／每次開 App（2.2.1）：cutover 備份＋改寫本應一次完成，但若備份持續失敗，
   // 舊格式月份永遠轉不成、遷移偵測每次儲存都成立 → 全螢幕「資料升級中」阻擋層每筆記帳都跳出。
   // 用此旗標讓「顯示阻擋層＋跑備份」在單次 App 開啟中最多一次；之後的同步只做輕量新格式推拉。
@@ -121,10 +136,12 @@ export function useSyncService() {
         //    acquireToken 會直接 reject → pull 拋錯 → 遷移被 try/catch 靜默吞掉且不重試。
         //    改為 warmToken()（確保拿到有效 token，必要時靜默刷新）成功後才 syncAll，
         //    讓「本來就登入」的返回使用者也能可靠偵測並執行新舊資料轉換。
-        warmToken().then(() => syncAll()).catch(() => {})
+        // 2.4.0：token 取得失敗以前是 .catch(() => {}) 全吞——而它一失敗，整個同步就
+        //        從頭到尾沒跑過，客戶與開發者兩邊都無聲無息。改為回報（去重＋12h 冷卻，不會洗版）。
+        warmToken().then(() => syncAll()).catch(err => reportError('auth/warmToken', err))
         // 每 50 分鐘靜默刷新（token 壽命 60 分鐘，提前更新避免過期觸發 popup）
         refreshTimer = setInterval(() => {
-          if (getSignedInEmail()) warmToken().catch(() => {})
+          if (getSignedInEmail()) warmToken().catch(err => reportError('auth/warmTokenRefresh', err))
         }, 50 * 60 * 1000)
       }
     }
@@ -161,6 +178,12 @@ export function useSyncService() {
         /* 探針失敗就維持 UNKNOWN，不影響回報 */
       }
       setSyncError({ kind, message: writeFailureMessage(kind) })
+      // 2.4.0：持久性成因（容量滿／無編輯權／scope 不足）→ 登記暫停，之後自動同步只剩低頻心跳。
+      //        UNKNOWN 不暫停：那多半是暫時斷網，下一輪就好了，暫停只會害帳目延後上雲。
+      if (shouldPauseFor(kind)) {
+        markPaused(kind)
+        setSyncPaused(getPause())
+      }
       reportError(context, err, {
         ...extra,
         kind,
@@ -182,11 +205,57 @@ export function useSyncService() {
   // 使用者手動關閉提示（下次同步再失敗會重新出現）
   const dismissSyncError = useCallback(() => setSyncError(null), [])
 
-  const syncAll = useCallback(async () => {
+  // 同步成功後的收尾：解除暫停、記錄成功時間。
+  // 客戶清完雲端空間 → 下一次心跳成功 → 這裡自動把暫停狀態拆掉，客戶不必做任何事。
+  const markSyncOk = useCallback(() => {
+    clearPause()
+    setSyncPaused(null)
+    pausedSessionTriedRef.current = false
+    const now = Date.now()
+    setLastSyncOk(now)
+    setLastSyncOkState(now)
+  }, [])
+
+  /**
+   * 同步主流程。
+   * @param manual true = 使用者按下「立即重試」——無視暫停閘門，並先清掉暫停狀態重新來過
+   */
+  const runSync = useCallback(async (manual: boolean) => {
     // sheetId 有效性延到取得 token 後、於 ensureValidSpreadsheet 檢查（垃圾桶/刪除自我修復），此處不擋
-    if (lockRef.current || !navigator.onLine || !getSignedInEmail()) return
+    if (lockRef.current || !navigator.onLine || !getSignedInEmail()) {
+      // 🔴 手動重試不能無聲無息：客戶按了「立即重試」卻什麼都沒發生，只會以為按鈕壞了。
+      //    離線／未登入是使用者自己能處理的狀況，直接講白。（自動同步照舊安靜略過。）
+      if (manual && !lockRef.current) {
+        if (!navigator.onLine) {
+          setSyncError({ kind: 'UNKNOWN', message: '目前沒有網路連線，帳目已安全存在本機，連上網路後會自動補傳。' })
+        } else if (!getSignedInEmail()) {
+          setSyncError({ kind: 'UNKNOWN', message: '尚未登入 Google，帳目只存在本機。請在下方登入後再同步。' })
+        }
+      }
+      return
+    }
+
+    // 🔴 暫停閘門（2.4.0）：容量滿時，每筆記帳都完整跑一輪必定失敗的同步（含 3 個診斷探針）
+    //    毫無意義。但**刻意不是全停**——每次開 App 仍放行一次心跳，同一 session 每 6h 再一次，
+    //    成功即 markSyncOk 自動恢復。手動重試一律放行。
+    const pause = getPause()
+    if (manual) {
+      clearPause()
+      setSyncPaused(null)
+      pausedSessionTriedRef.current = false
+    } else if (!allowHeartbeat(pause, pausedSessionTriedRef.current, Date.now())) {
+      return
+    } else if (pause) {
+      pausedSessionTriedRef.current = true
+      markHeartbeatTried()
+    }
+
     lockRef.current = true
     setSyncing(true)
+
+    // 類別設定推送失敗（多半就是同一個 403）先記下來，走到結尾再一併處理：
+    // 不能無聲吞掉，否則客戶會以為類別改動已經上雲了。
+    let configErr: unknown = null
 
     try {
       // 🔴 自我修復：確認試算表指標仍有效（未被移到垃圾桶／刪除），無效則清除並重新解析（可能得到新 id）
@@ -200,6 +269,7 @@ export function useSyncService() {
           await pushConfigToSheets(sheetId, getCategories())
         } catch (err) {
           console.error('[sync-config] push failed:', err)
+          configErr ??= err   // 2.4.0：不再無聲吞掉（見結尾的 configErr 處理）
         }
       }
 
@@ -225,6 +295,7 @@ export function useSyncService() {
           await pushConfigToSheets(sheetId, recovered)
         } catch (err) {
           console.error('[sync-config] recover push failed:', err)
+          configErr ??= err   // 2.4.0：同上
         }
       }
       const localTx = await db.transactions.toArray()
@@ -291,10 +362,18 @@ export function useSyncService() {
           .filter(t => t.date.startsWith(month) && t.syncStatus === 'DELETED')
           .delete()
       }
-      // 走到這裡＝整輪同步（含所有月份寫回）沒有丟例外 → 清除失敗提示。
-      // 刻意也清掉「本輪備份失敗」設下的提示：備份失敗只代表舊格式月份延後轉換，
-      // 帳目本身已成功上雲，此時再顯示「只存在本機」是錯的。
-      setSyncError(null)
+      // 走到這裡＝整輪同步（含所有月份寫回）沒有丟例外。
+      if (configErr) {
+        // 帳目寫回成功、但類別設定推不上去（2.4.0 補洞）。以前這裡會無條件清掉提示，
+        // 客戶完全不會知道類別改動沒上雲——正是我們在修的那類靜默失敗。
+        // 共用失敗處理只在這裡跑一次，診斷探針不會重複打。
+        await handleSyncFailure('sync/config', configErr)
+      } else {
+        // 清除失敗提示。刻意也清掉「本輪備份失敗」設下的提示：備份失敗只代表舊格式
+        // 月份延後轉換，帳目本身已成功上雲，此時再顯示「只存在本機」是錯的。
+        setSyncError(null)
+        markSyncOk()
+      }
     } catch (err) {
       console.error('[sync] failed:', err)
       // 同步整體失敗也回報（去重／冷卻在 errorReport 內處理，不會洗版；URL 未設定時 no-op）
@@ -307,7 +386,15 @@ export function useSyncService() {
       setMigrating(false)
       setMigrateMsg('')
     }
-  }, [handleSyncFailure])
+  }, [handleSyncFailure, markSyncOk])
+
+  // 自動同步（記帳後／恢復連線／開 App）——吃暫停閘門。
+  // 🔴 刻意寫成無參數：它同時被當成 window 'online' 事件與 React onClick 的 handler，
+  //    若接受參數就會把 Event 物件當成選項吃進去。
+  const syncAll = useCallback(() => { void runSync(false) }, [runSync])
+
+  // 手動重試（橫幅「我已清理完成，立即重試」／設定頁「同步」）——無視暫停閘門
+  const retryNow = useCallback(() => { void runSync(true) }, [runSync])
 
   // 強制從雲端還原：清空本機後以雲端資料完整覆蓋
   const restoreFromSheets = useCallback(async () => {
@@ -329,11 +416,13 @@ export function useSyncService() {
       }
     } catch (err) {
       console.error('[restore] failed:', err)
+      // 2.4.0：還原失敗以前完全無聲——使用者按了「還原」、什麼都沒發生，開發者也收不到。
+      await handleSyncFailure('restore', err)
     } finally {
       lockRef.current = false
       setRestoring(false)
     }
-  }, [])
+  }, [handleSyncFailure])
 
   const clearLocalData = useCallback(async () => {
     await db.dailyRecords.clear()
@@ -348,8 +437,10 @@ export function useSyncService() {
       await pushConfigToSheets(sheetId, categories)
     } catch (err) {
       console.error('[sync-config] failed:', err)
+      // 2.4.0：類別頁儲存後的推送以前完全無聲——客戶改完類別以為已同步，其實停在本機
+      await handleSyncFailure('sync/config', err)
     }
-  }, [])
+  }, [handleSyncFailure])
 
   const signIn = useCallback(async () => {
     setSignInError(null)
@@ -413,6 +504,10 @@ export function useSyncService() {
     migrateMsg,
     syncError,
     dismissSyncError,
+    // 2.4.0：暫停狀態（null = 正常）、上次成功同步時間、手動重試
+    syncPaused,
+    lastSyncOk,
+    retryNow,
     restoreFromSheets,
     clearLocalData,
     isConfigured: isGoogleConfigured(),
