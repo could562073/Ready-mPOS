@@ -251,8 +251,10 @@ cd frontend && npm run dev
 # Unit tests (Vitest)
 cd frontend && npm test
 
-# Type check
-cd frontend && npx tsc --noEmit
+# Type check（🔴 必須是 tsc -b，不能用 --noEmit）
+# tsconfig.json 是 solution-style（files: [] + 只有 references），
+# `tsc --noEmit` 檢查了零個檔案、永遠 exit 0，等於空轉（2.4.1 實測踩到）。
+cd frontend && npx tsc -b
 
 # Build frontend（production mode → 正式試算表名）
 cd frontend && npm run build
