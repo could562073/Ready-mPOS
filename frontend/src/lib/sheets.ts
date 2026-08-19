@@ -1,5 +1,8 @@
 import type { DailyRecord, Category, Transaction } from '../types'
-import { applyCloudCategories, isCategoriesDirty, clearCategoriesDirty, serializeSubs, parseSubs } from './categories'
+import {
+  applyCloudCategories, isCategoriesDirty, clearCategoriesDirty,
+  categoriesToConfigRows, configRowsToCategories,
+} from './categories'
 import {
   TX_MONTH_HEADERS, isNewTxFormat, txToRow, rowToTx, categoryHintsFromRow,
   type TxSeed, type CategoryHint,
@@ -33,10 +36,8 @@ const COL_NET           = '淨利'
 
 const FIXED_COLS = new Set([COL_DATE, COL_NOTES, COL_ITEM_NOTES, COL_TOTAL_INCOME, COL_TOTAL_EXPENSE, COL_NET])
 
-// _config tab 欄位順序
+// _config tab 名稱；欄位順序與列⇄物件轉換見 categories.ts 的 CONFIG_HEADERS（純函式，有測試覆蓋）
 const CONFIG_TAB     = '_config'
-// deleted 為 2.3.0 新增（軟刪除墓碑）；舊表沒有這欄，pull 時一律視為未刪除
-const CONFIG_HEADERS = ['id', 'name', 'icon', 'color', 'fee', 'enabled', 'type', 'subs', 'defaultSub', 'deleted']
 
 interface TokenInfo {
   access_token: string
@@ -353,23 +354,17 @@ export async function pushConfigToSheets(spreadsheetId: string, categories: Cate
   const token = await acquireToken()
   await ensureSheet(spreadsheetId, CONFIG_TAB, token)
 
-  const values: (string | number)[][] = [
-    CONFIG_HEADERS,
-    ...categories.map(c => [
-      c.id, c.name, c.icon, c.color,
-      c.fee ?? 0,
-      c.enabled ? 'true' : 'false',
-      c.type,
-      serializeSubs(c.subs ?? []),
-      c.defaultSubId ?? '',
-      c.deleted ? 'true' : 'false',   // 軟刪除墓碑（2.3.0）
-    ]),
-  ]
+  const values = categoriesToConfigRows(categories)
 
   // 先清空整個 tab — 否則刪除類別後舊列會殘留，下次 pull 會把已刪除類別讀回 localStorage
   await sheetsValuesClear(spreadsheetId, CONFIG_TAB, token)
+  // 🔴 必須是 RAW，不能用 USER_ENTERED（2.4.1 修正的正式站 bug）：
+  // USER_ENTERED 等同「使用者手打」，Sheets 會把 'true'/'false' 轉成布林儲存格，
+  // 讀回來變成大寫 TRUE/FALSE → enabled/deleted 兩欄每次 pull 都被翻回預設值，
+  // 客戶端的「停用類別」與「刪除類別」看起來完全沒有生效。
+  // RAW 一律照字面存字串，也順帶保護類別名稱不被當成日期或公式解析。
   await sheetsPut(
-    `/${spreadsheetId}/values/${encodeURIComponent(CONFIG_TAB + '!A1')}?valueInputOption=USER_ENTERED`,
+    `/${spreadsheetId}/values/${encodeURIComponent(CONFIG_TAB + '!A1')}?valueInputOption=RAW`,
     { range: `${CONFIG_TAB}!A1`, majorDimension: 'ROWS', values },
     token,
   )
@@ -385,37 +380,12 @@ export async function pullConfigFromSheets(spreadsheetId: string): Promise<Categ
 
   const token = await acquireToken()
   try {
-    const data = await sheetsGet<{ values?: string[][] }>(
+    const data = await sheetsGet<{ values?: unknown[][] }>(
       `/${spreadsheetId}/values/${encodeURIComponent(CONFIG_TAB + '!A1:J')}`,   // J = deleted（2.3.0）
       token,
     )
-    const rows = data.values ?? []
-    if (rows.length < 2) return null
-
-    // 以表頭名稱建立 index map，容錯欄位順序變動
-    const header = rows[0]
-    const idx = (col: string) => header.indexOf(col)
-
-    const categories: Category[] = rows.slice(1)
-      .filter(r => r[idx('id')])
-      .map(r => {
-        const subsRaw = idx('subs') >= 0 ? (r[idx('subs')] ?? '') : ''
-        const defRaw  = idx('defaultSub') >= 0 ? (r[idx('defaultSub')] ?? '') : ''
-        return {
-          id:      r[idx('id')],
-          name:    r[idx('name')]  ?? '',
-          icon:    r[idx('icon')]  ?? 'tag',
-          color:   r[idx('color')] ?? 'mint',
-          fee:     parseFloat(r[idx('fee')]) || 0,
-          enabled: r[idx('enabled')] !== 'false',
-          type:    (r[idx('type')] === 'expense' ? 'expense' : 'income') as 'income' | 'expense',
-          subs:        parseSubs(subsRaw),
-          defaultSubId: defRaw || null,
-          // 軟刪除墓碑（2.3.0）；舊表沒有這欄（idx = -1）→ 視為未刪除，向後相容
-          deleted: idx('deleted') >= 0 && r[idx('deleted')] === 'true',
-        }
-      })
-
+    // 解析與欄位容錯全在純函式裡（categories.ts，Vitest 覆蓋）
+    const categories = configRowsToCategories(data.values ?? [])
     if (categories.length > 0) {
       // 套用前再次檢查：拉取期間使用者可能剛好做了編輯
       if (isCategoriesDirty()) return null
