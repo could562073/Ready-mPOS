@@ -213,6 +213,89 @@ export function serializeSubs(subs: Sub[]): string {
   return subs.map(s => `${s.id}:${encodeURIComponent(s.name)}${s.deleted ? ':1' : ''}`).join('|')
 }
 
+// ─────────────────────────────────────────────────────────────
+// _config 分頁列 ⇄ Category[]（2.4.1）
+//
+// 這段原本 inline 在 sheets.ts 的 pushConfigToSheets/pullConfigFromSheets 裡，
+// 夾在網路呼叫中間 → 無法單元測試，「往返」這條路徑於是從來沒有測試覆蓋，
+// 讓下面 parseSheetBool 修的那個 bug 一路上了正式站。抽成純函式就是為了鎖住它。
+// ─────────────────────────────────────────────────────────────
+
+// _config 分頁的固定表頭（欄序即寫入順序；讀取一律以名稱定位，不靠索引）
+// deleted 為 2.3.0 新增（軟刪除墓碑）；舊表沒有這欄，pull 時一律視為未刪除
+export const CONFIG_HEADERS = [
+  'id', 'name', 'icon', 'color', 'fee', 'enabled', 'type', 'subs', 'defaultSub', 'deleted',
+] as const
+
+/**
+ * 解析 _config 的布林欄位。
+ *
+ * 🔴 為什麼要容錯大小寫與真布林（2.4.1 修正的正式站 bug）：
+ * 寫入若用 valueInputOption=USER_ENTERED，Sheets 會把 'true'/'false' 當成使用者手打的內容
+ * 解析成**布林儲存格**；再讀回來時，預設的 FORMATTED_VALUE 給的是顯示字串大寫 'TRUE'/'FALSE'，
+ * UNFORMATTED_VALUE 給的則是真的 boolean。原本只比對小寫字串 → 一律不成立 →
+ * 每次 pull 都把 enabled 翻回 true、deleted 翻回 false，客戶端看起來就是
+ * 「類別停用與刪除完全沒有生效」。寫入端已改用 RAW（見 sheets.ts），
+ * 但既有雲端表裡已經是布林儲存格，讀取端必須照樣認得，否則救不回已經壞掉的表。
+ *
+ * @param fallback 欄位缺漏或內容無法辨識時的預設值（enabled=true、deleted=false，向後相容舊表）
+ */
+export function parseSheetBool(v: unknown, fallback: boolean): boolean {
+  if (typeof v === 'boolean') return v
+  const s = String(v ?? '').trim().toLowerCase()
+  if (s === 'true')  return true
+  if (s === 'false') return false
+  return fallback
+}
+
+// Category[] → _config 列（第一列為表頭）。
+// 🔴 寫入端必須搭配 valueInputOption=RAW，否則這裡的 'true'/'false' 會被 Sheets 轉成布林儲存格。
+export function categoriesToConfigRows(categories: Category[]): (string | number)[][] {
+  return [
+    [...CONFIG_HEADERS],
+    ...categories.map(c => [
+      c.id, c.name, c.icon, c.color,
+      c.fee ?? 0,
+      c.enabled ? 'true' : 'false',
+      c.type,
+      serializeSubs(c.subs ?? []),
+      c.defaultSubId ?? '',
+      c.deleted ? 'true' : 'false',   // 軟刪除墓碑（2.3.0）
+    ]),
+  ]
+}
+
+// _config 列（含表頭）→ Category[]。
+// 以表頭名稱定位欄位（不靠固定索引）→ 欄序調整、舊表缺欄都不會錯位；id 空白的殘留列略過。
+export function configRowsToCategories(rows: unknown[][]): Category[] {
+  if (rows.length < 2) return []
+  const header = (rows[0] ?? []).map(h => String(h ?? ''))
+  const cell = (r: unknown[], col: string): unknown => {
+    const i = header.indexOf(col)
+    return i >= 0 ? r[i] : undefined
+  }
+  const str = (r: unknown[], col: string): string => {
+    const v = cell(r, col)
+    return v === undefined || v === null ? '' : String(v)
+  }
+  return rows.slice(1)
+    .filter(r => str(r, 'id'))
+    .map(r => ({
+      id:    str(r, 'id'),
+      name:  str(r, 'name'),
+      icon:  str(r, 'icon')  || 'tag',
+      color: str(r, 'color') || 'mint',
+      fee:   parseFloat(str(r, 'fee')) || 0,
+      // 欄位缺漏／空白一律視為啟用：寧可多顯示一個類別，也不要讓整批帳目的類別無聲消失
+      enabled: parseSheetBool(cell(r, 'enabled'), true),
+      type: (str(r, 'type') === 'expense' ? 'expense' : 'income') as 'income' | 'expense',
+      subs: parseSubs(str(r, 'subs')),
+      defaultSubId: str(r, 'defaultSub') || null,
+      // 舊表（<2.3.0）沒有這欄 → 視為未刪除
+      deleted: parseSheetBool(cell(r, 'deleted'), false),
+    }))
+}
+
 // 反序列化 _config 的 subs 欄；容錯：空字串→[]，格式不符的片段略過。
 // 沒有第三段旗標的舊資料一律視為未刪除（向後相容）。
 export function parseSubs(raw: string): Sub[] {

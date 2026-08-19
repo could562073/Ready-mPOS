@@ -3,6 +3,7 @@ import {
   addSub, renameSub, deleteSub, setDefaultSub, serializeSubs, parseSubs,
   restoreSub, liveSubs, deleteCategory, restoreCategory,
   recoverOrphanCategories, ORPHAN_CATEGORY_NAME,
+  CONFIG_HEADERS, categoriesToConfigRows, configRowsToCategories, parseSheetBool,
 } from './categories'
 import type { Category } from '../types'
 import type { CategoryHint } from './txSheets'
@@ -166,5 +167,108 @@ describe('recoverOrphanCategories', () => {
     recoverOrphanCategories(input, [hint({ kind: 'sub', id: 's9', name: 'x', parentId: 'c1' })])
     expect(input).toHaveLength(1)
     expect(base.subs).toEqual([{ id: 's1', name: '水費' }])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// _config 分頁列 ⇄ Category[]（2.4.1）
+//
+// 🔴 這組測試就是為了鎖死正式站踩到的 bug：類別「停用」與「刪除」推上雲後，
+//    下一次 pull 會把兩個旗標翻回預設值，客戶端看起來像「操作沒有生效」。
+//    成因是 Sheets 以 USER_ENTERED 寫入時把 'true'/'false' 轉成布林儲存格，
+//    讀回來（FORMATTED_VALUE）變成大寫 'TRUE'/'FALSE'，而解析器只比對小寫。
+// ─────────────────────────────────────────────────────────────
+describe('_config 列 ⇄ Category[]（純函式）', () => {
+  const H = [...CONFIG_HEADERS]
+
+  // 一列完整的 _config 資料（依 CONFIG_HEADERS 欄序）
+  const row = (over: Partial<Record<string, unknown>> = {}): unknown[] => {
+    const base: Record<string, unknown> = {
+      id: 'food', name: '食材採購', icon: 'package', color: 'peach',
+      fee: 0, enabled: 'true', type: 'expense', subs: '', defaultSub: '', deleted: 'false',
+    }
+    return H.map(h => (h in over ? over[h] : base[h]))
+  }
+
+  it('🔴 Sheets 轉型後的大寫 FALSE → 停用（修正前會被判成啟用）', () => {
+    const [cat] = configRowsToCategories([H, row({ enabled: 'FALSE' })])
+    expect(cat.enabled).toBe(false)
+  })
+
+  it('🔴 Sheets 轉型後的大寫 TRUE → 已刪除墓碑（修正前墓碑會被抹掉、類別復活）', () => {
+    const [cat] = configRowsToCategories([H, row({ deleted: 'TRUE' })])
+    expect(cat.deleted).toBe(true)
+  })
+
+  it('以 UNFORMATTED_VALUE 讀到的真布林同樣認得', () => {
+    const [cat] = configRowsToCategories([H, row({ enabled: false, deleted: true })])
+    expect(cat.enabled).toBe(false)
+    expect(cat.deleted).toBe(true)
+  })
+
+  it('RAW 寫入的小寫字串仍正常解析（本次修正後的正常路徑）', () => {
+    const [cat] = configRowsToCategories([H, row({ enabled: 'false', deleted: 'true' })])
+    expect(cat.enabled).toBe(false)
+    expect(cat.deleted).toBe(true)
+  })
+
+  it('舊表沒有 deleted 欄（9 欄）→ 視為未刪除，向後相容', () => {
+    const oldH = H.slice(0, 9)
+    const oldRow = row().slice(0, 9)
+    const [cat] = configRowsToCategories([oldH, oldRow])
+    expect(cat.deleted).toBe(false)
+    expect(cat.enabled).toBe(true)
+  })
+
+  it('enabled 欄空白或缺漏 → 視為啟用（不因欄位遺失讓類別整批消失）', () => {
+    expect(configRowsToCategories([H, row({ enabled: '' })])[0].enabled).toBe(true)
+    const noEnabled = H.filter(h => h !== 'enabled')
+    const r = noEnabled.map(h => (h === 'id' ? 'food' : h === 'type' ? 'expense' : ''))
+    expect(configRowsToCategories([noEnabled, r])[0].enabled).toBe(true)
+  })
+
+  it('欄序變動仍以表頭名稱定位', () => {
+    const shuffled = ['deleted', 'id', 'enabled', 'name', 'type']
+    const [cat] = configRowsToCategories([shuffled, ['TRUE', 'food', 'FALSE', '食材採購', 'expense']])
+    expect(cat).toMatchObject({ id: 'food', name: '食材採購', enabled: false, deleted: true, type: 'expense' })
+  })
+
+  it('id 空白的列略過（表尾殘留空列不該變成類別）', () => {
+    expect(configRowsToCategories([H, row({ id: '' }), row()])).toHaveLength(1)
+  })
+
+  it('只有表頭或空陣列 → 回空陣列', () => {
+    expect(configRowsToCategories([H])).toEqual([])
+    expect(configRowsToCategories([])).toEqual([])
+  })
+
+  it('往返：停用 + 已刪除 + 二級 + 預設二級都能原樣還原', () => {
+    const cats: Category[] = [
+      { id: 'cash', name: '現金', icon: 'cash', color: 'mint', fee: 0.3, enabled: false, type: 'income',
+        subs: [{ id: 's1', name: '外帶' }, { id: 's2', name: '內用', deleted: true }], defaultSubId: 's1' },
+      { id: 'wage', name: '員工薪資', icon: 'users', color: 'lavender', enabled: true, type: 'expense', deleted: true },
+    ]
+    const back = configRowsToCategories(categoriesToConfigRows(cats))
+    expect(back[0]).toMatchObject({
+      id: 'cash', name: '現金', fee: 0.3, enabled: false, type: 'income', defaultSubId: 's1', deleted: false,
+    })
+    expect(back[0].subs).toEqual([{ id: 's1', name: '外帶' }, { id: 's2', name: '內用', deleted: true }])
+    expect(back[1]).toMatchObject({ id: 'wage', enabled: true, deleted: true, defaultSubId: null })
+  })
+
+  it('categoriesToConfigRows 第一列是表頭，且布林欄寫成小寫字串', () => {
+    const rows = categoriesToConfigRows([{ ...base, enabled: false, deleted: true }])
+    expect(rows[0]).toEqual(H)
+    expect(rows[1][H.indexOf('enabled')]).toBe('false')
+    expect(rows[1][H.indexOf('deleted')]).toBe('true')
+  })
+
+  it('parseSheetBool：認得大小寫與真布林，其餘一律回 fallback', () => {
+    expect(parseSheetBool('TRUE', false)).toBe(true)
+    expect(parseSheetBool(' false ', true)).toBe(false)
+    expect(parseSheetBool(true, false)).toBe(true)
+    expect(parseSheetBool('', true)).toBe(true)
+    expect(parseSheetBool(undefined, false)).toBe(false)
+    expect(parseSheetBool('是', true)).toBe(true)
   })
 })
