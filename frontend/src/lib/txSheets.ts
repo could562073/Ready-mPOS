@@ -14,6 +14,89 @@ export function isNewTxFormat(header: string[]): boolean {
   return header.includes('收支') && header.includes('id')
 }
 
+// ── Sheets 儲存格值解析（純函式，2.4.2）──────────────────────────────
+// 🔴 為什麼需要這兩個函式：sheets.ts 的所有讀取都沒有指定 valueRenderOption，
+// 也就是一律吃 Sheets 預設的 FORMATTED_VALUE——拿到的是「畫面上顯示的字串」而非儲存格真值。
+// 今天沒出事，只是因為寫入的是無格式整數；但只要使用者在試算表上對「金額」欄
+// 套用一次貨幣或千分位格式，讀回來就變成 "1,234"，而現行 rowToTx 的
+// `Number(...) || 0` 會把它吞成 0，接著被整月 clear+覆蓋寫回雲端——
+// 本機與雲端同時歸零，且全程沒有任何錯誤訊息。
+// 這與 2.4.1 的 _config 布林欄事故是同一個根因：把顯示層字串當成資料真值解析，
+// 而且解析邏輯埋在網路函式裡、不是純函式，於是完全沒有測試覆蓋。
+//
+// ⚠️ 這兩個函式此版尚未接線（rowToTx 仍為舊寫法，行為不變）。接線與
+// 「寫入改 RAW + 讀取改 UNFORMATTED_VALUE」屬同一次變更，會在下一輪一起做；
+// 這裡先獨立落地並用測試把行為鎖死，避免重演「邏輯夾在 I/O 裡＝零覆蓋」。
+
+/**
+ * 解析 Sheets 金額儲存格 → number；無法可靠解析時回 null。
+ * 認得：真數字（UNFORMATTED_VALUE）、"1234"、"1,234"、"NT$1,234"、"1 234"、
+ *       "1234元"、會計格式括號負數 "(500)"、正負號。
+ * 🔴 絕不回 0：0 本身是合法金額，拿它當「解析失敗」的哨兵值，等於允許一次壞掉的
+ *    讀取把使用者真實的金額覆寫成 0。呼叫端拿到 null 應略過該列，讓本機值勝出。
+ */
+export function parseSheetAmount(v: unknown): number | null {
+  // UNFORMATTED_VALUE 會直接給數字；布林/物件一律不是金額
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null
+  if (typeof v !== 'string') return null
+
+  let s = v.trim()
+  if (!s) return null
+
+  // 會計格式的括號負數：(500) / （500）
+  let negative = false
+  const paren = /^[(（]\s*(.*?)\s*[)）]$/.exec(s)
+  if (paren) { negative = true; s = paren[1] }
+
+  // 去掉貨幣符號、千分位與各種空白（含全形空白與不斷行空白）
+  s = s.replace(/[\s\u00A0\u3000]|NT\$|NT|[$＄￥¥元,，]/g, '')
+  if (s.startsWith('-') || s.startsWith('−')) { negative = !negative; s = s.slice(1) }
+  else if (s.startsWith('+')) s = s.slice(1)
+
+  // 清乾淨後必須是純數字，否則視為無法解析（不猜、不退回 0）
+  if (!/^\d+(\.\d+)?$/.test(s)) return null
+  const n = Number(s)
+  if (!Number.isFinite(n)) return null
+  return negative ? -n : n
+}
+
+// Sheets/Excel 日期序列號起算日：序號 0 = 1899-12-30（UTC）。
+// 讀取改用 UNFORMATTED_VALUE 後，日期型儲存格會以這種數字形式回來。
+const SHEETS_EPOCH_UTC = Date.UTC(1899, 11, 30)
+const MAX_DATE_SERIAL = 2958465 // 9999-12-31，超出視為不是日期
+
+function pad2(n: number): string { return String(n).padStart(2, '0') }
+
+// 驗證是真實存在的日期（擋掉 2026-02-30 這種），並輸出 'YYYY-MM-DD'
+function buildIsoDate(y: number, mo: number, d: number): string | null {
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null
+  const dt = new Date(Date.UTC(y, mo - 1, d))
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null
+  return `${y}-${pad2(mo)}-${pad2(d)}`
+}
+
+/**
+ * 解析 Sheets 日期儲存格 → 'YYYY-MM-DD'；無法可靠解析時回 null。
+ * 認得：日期序列號（45000 這種數字）、"2026-08-23"、"2026/8/23"、"2026.8.23"、"2026年8月23日"。
+ * 🔴 刻意只接受「年在前」的格式：'8/23/2026'（美式）與 '23/8/2026'（歐式）無法從字串本身
+ *    分辨月與日，猜錯會讓整筆交易落到錯誤月份而在月結中消失——寧可回 null 略過該列。
+ */
+export function parseSheetDate(v: unknown): string | null {
+  if (typeof v === 'number') {
+    if (!Number.isFinite(v)) return null
+    const days = Math.floor(v) // 帶時間的日期序列號取整數日
+    if (days < 1 || days > MAX_DATE_SERIAL) return null
+    const dt = new Date(SHEETS_EPOCH_UTC + days * 86400000)
+    return buildIsoDate(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate())
+  }
+  if (typeof v !== 'string') return null
+  const s = v.trim()
+  if (!s) return null
+  const m = /^(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?$/.exec(s)
+  if (!m) return null
+  return buildIsoDate(Number(m[1]), Number(m[2]), Number(m[3]))
+}
+
 // 單筆交易 → Sheets 列（依 TX_MONTH_HEADERS 欄序）
 // 一級/二級以名稱輸出（人類可讀）；找不到類別時保留原始 categoryId 字串，避免丟資料。
 // 一級ID 只在 categoryId 可解析為現有類別時寫入——未解析字串（已刪類別的殘留 id、
