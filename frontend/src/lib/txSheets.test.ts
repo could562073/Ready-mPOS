@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   TX_MONTH_HEADERS, isNewTxFormat, txToRow, rowToTx, mergeTransactionsById, planMonthsToRewrite,
-  categoryHintsFromRow,
+  categoryHintsFromRow, parseSheetAmount, parseSheetDate,
 } from './txSheets'
 import type { Category, Transaction } from '../types'
 import type { TxSeed } from './txSheets'
@@ -194,5 +194,143 @@ describe('categoryHintsFromRow — 孤兒類別線索', () => {
 
   it('名稱欄空白或缺欄不炸，回空名稱交由回收端補佔位名', () => {
     expect(categoryHintsFromRow({ ...seed, subId: null }, ['2026-07-04'], header)[0].name).toBe('')
+  })
+})
+
+// ── Sheets 儲存格值解析（2.4.2）─────────────────────────────────
+// 這兩組測試鎖定的是「顯示層字串 ≠ 資料真值」這個 2.4.1 事故的根因在金額/日期欄的版本。
+// 🔴 最重要的一條不變式：解析失敗一律回 null，永遠不可以退回 0 或今天的日期——
+//    那等於允許一次壞掉的讀取把使用者的真實帳目覆寫掉。
+
+describe('parseSheetAmount', () => {
+  it('UNFORMATTED_VALUE 的真數字直接回傳', () => {
+    expect(parseSheetAmount(1234)).toBe(1234)
+    expect(parseSheetAmount(1234.5)).toBe(1234.5)
+    expect(parseSheetAmount(-500)).toBe(-500)
+  })
+
+  it('0 是合法金額，必須回 0 而非 null', () => {
+    expect(parseSheetAmount(0)).toBe(0)
+    expect(parseSheetAmount('0')).toBe(0)
+  })
+
+  it('非有限數字視為無法解析', () => {
+    expect(parseSheetAmount(NaN)).toBeNull()
+    expect(parseSheetAmount(Infinity)).toBeNull()
+  })
+
+  it('純數字字串', () => {
+    expect(parseSheetAmount('1234')).toBe(1234)
+    expect(parseSheetAmount('  1234  ')).toBe(1234)
+  })
+
+  it('🔴 千分位格式——這正是現行 `Number(x) || 0` 會靜默歸零的輸入', () => {
+    expect(parseSheetAmount('1,234')).toBe(1234)
+    expect(parseSheetAmount('1,234.50')).toBe(1234.5)
+    expect(parseSheetAmount('1,234,567')).toBe(1234567)
+  })
+
+  it('貨幣符號（NT$／$／全形）', () => {
+    expect(parseSheetAmount('NT$1,234')).toBe(1234)
+    expect(parseSheetAmount('$1,234')).toBe(1234)
+    expect(parseSheetAmount('＄1234')).toBe(1234)
+    expect(parseSheetAmount('1234元')).toBe(1234)
+  })
+
+  it('各種空白與全形逗號', () => {
+    expect(parseSheetAmount('1 234')).toBe(1234)
+    expect(parseSheetAmount('1\u00A0234')).toBe(1234)   // 不斷行空白
+    expect(parseSheetAmount('1\u3000234')).toBe(1234)   // 全形空白
+    expect(parseSheetAmount('1，234')).toBe(1234)        // 全形逗號
+  })
+
+  it('會計格式括號負數與正負號', () => {
+    expect(parseSheetAmount('(500)')).toBe(-500)
+    expect(parseSheetAmount('（500）')).toBe(-500)
+    expect(parseSheetAmount('(NT$1,234)')).toBe(-1234)
+    expect(parseSheetAmount('-500')).toBe(-500)
+    expect(parseSheetAmount('+500')).toBe(500)
+  })
+
+  it('空值與非字串型別回 null', () => {
+    expect(parseSheetAmount('')).toBeNull()
+    expect(parseSheetAmount('   ')).toBeNull()
+    expect(parseSheetAmount(null)).toBeNull()
+    expect(parseSheetAmount(undefined)).toBeNull()
+    expect(parseSheetAmount({})).toBeNull()
+  })
+
+  it('🔴 布林儲存格不是金額（2.4.1 同款的型別誤判）', () => {
+    expect(parseSheetAmount(true)).toBeNull()
+    expect(parseSheetAmount(false)).toBeNull()
+    expect(parseSheetAmount('TRUE')).toBeNull()
+  })
+
+  it('🔴 無法解析時一律 null，絕不退回 0', () => {
+    for (const bad of ['abc', '12.34.56', '#REF!', '#VALUE!', '一千二', '1e5x', '--5']) {
+      expect(parseSheetAmount(bad)).toBeNull()
+    }
+  })
+})
+
+describe('parseSheetDate', () => {
+  it('ISO 格式原樣通過', () => {
+    expect(parseSheetDate('2026-08-23')).toBe('2026-08-23')
+    expect(parseSheetDate('  2026-08-23  ')).toBe('2026-08-23')
+  })
+
+  it('🔴 地區化顯示字串——FORMATTED_VALUE 讀日期型儲存格會拿到這種', () => {
+    expect(parseSheetDate('2026/8/23')).toBe('2026-08-23')
+    expect(parseSheetDate('2026/08/23')).toBe('2026-08-23')
+    expect(parseSheetDate('2026.8.23')).toBe('2026-08-23')
+    expect(parseSheetDate('2026年8月23日')).toBe('2026-08-23')
+  })
+
+  it('🔴 日期序列號——UNFORMATTED_VALUE 讀日期型儲存格會拿到這種數字', () => {
+    expect(parseSheetDate(44927)).toBe('2023-01-01')  // 業界公認錨點
+    expect(parseSheetDate(46257)).toBe('2026-08-23')
+    expect(parseSheetDate(46257.75)).toBe('2026-08-23') // 帶時間的序列號取整數日
+  })
+
+  it('超出合理範圍的序列號視為不是日期', () => {
+    expect(parseSheetDate(0)).toBeNull()
+    expect(parseSheetDate(-1)).toBeNull()
+    expect(parseSheetDate(99999999)).toBeNull()
+    expect(parseSheetDate(NaN)).toBeNull()
+  })
+
+  it('🔴 月日順序不明確的格式一律拒絕，不猜', () => {
+    expect(parseSheetDate('8/23/2026')).toBeNull()   // 美式
+    expect(parseSheetDate('23/08/2026')).toBeNull()  // 歐式
+    expect(parseSheetDate('08-23-26')).toBeNull()
+  })
+
+  it('不存在的日期回 null', () => {
+    expect(parseSheetDate('2026-02-30')).toBeNull()
+    expect(parseSheetDate('2026-13-01')).toBeNull()
+    expect(parseSheetDate('2026-00-10')).toBeNull()
+    expect(parseSheetDate('2025-02-29')).toBeNull() // 非閏年
+  })
+
+  it('閏日正確通過', () => {
+    expect(parseSheetDate('2024-02-29')).toBe('2024-02-29')
+  })
+
+  it('空值與非字串型別回 null', () => {
+    expect(parseSheetDate('')).toBeNull()
+    expect(parseSheetDate('   ')).toBeNull()
+    expect(parseSheetDate(null)).toBeNull()
+    expect(parseSheetDate(undefined)).toBeNull()
+    expect(parseSheetDate(true)).toBeNull()
+    expect(parseSheetDate('hello')).toBeNull()
+  })
+})
+
+describe('txToRow → parse 往返', () => {
+  it('寫出去的日期與金額都能原值解析回來', () => {
+    const row = txToRow(tx({ date: '2026-08-23', amount: 1234.5 }), catById)
+    const header = [...TX_MONTH_HEADERS]
+    expect(parseSheetDate(row[header.indexOf('日期')])).toBe('2026-08-23')
+    expect(parseSheetAmount(row[header.indexOf('金額')])).toBe(1234.5)
   })
 })
