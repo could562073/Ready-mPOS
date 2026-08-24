@@ -100,6 +100,13 @@ describe('pullConfigFromSheets — _config 布林欄解析（2.4.1 回歸鎖）'
     expect(byId.get('c2')!.deleted).toBe(true)
   })
 
+  it('以 UNFORMATTED_VALUE 讀取（2.5.0：拿真值，不受顯示格式影響）', async () => {
+    const { sheets } = await loadSheets((url, method) =>
+      method === 'GET' && url.includes('/values/') ? { values: [CONFIG_HEADER] } : undefined)
+    await sheets.pullConfigFromSheets('SS')
+    expect(calls[0].url).toContain('valueRenderOption=UNFORMATTED_VALUE')
+  })
+
   it('本機有未推送修改（dirty）時直接跳過拉取，不打任何網路請求', async () => {
     const { sheets, ls } = await loadSheets(() => ({ values: [] }))
     ls.setItem('mpos_categories_dirty', '1')
@@ -168,6 +175,53 @@ describe('pullAllTransactionsFromSheets — 月份分頁讀取', () => {
     expect(r.seeds[0].categoryId).toBe('c1')   // 無 ID 欄時靠名稱對照回來
   })
 
+  it('以 UNFORMATTED_VALUE 讀取，金額數字與日期序號都能正確還原（2.5.0）', async () => {
+    const { sheets } = await loadSheets(monthRoute([
+      [...TX_MONTH_HEADERS],
+      // UNFORMATTED_VALUE 下：金額是真數字、日期儲存格是序號（46257 = 2026-08-23）
+      [46257, '收入', '現金', '', 1200.5, '', 'tx-1', 'c1', ''],
+    ]))
+    const r = await sheets.pullAllTransactionsFromSheets('SS', [cat({})])
+    const monthCall = calls.find(c => c.url.includes('2026-08'))!
+    expect(monthCall.url).toContain('valueRenderOption=UNFORMATTED_VALUE')
+    expect(r.seeds[0].date).toBe('2026-08-23')
+    expect(r.seeds[0].amount).toBe(1200.5)
+    expect(r.unreadableMonths).toEqual([])
+  })
+
+  // 🔴 本輪的核心防線：讀不懂的列必須冒泡成 unreadableMonths，
+  //    否則「略過該列」＋「整月 clear+覆蓋」＝把它從雲端永久刪除
+  it('月份含讀不懂的列 → 標記 unreadableMonths，可讀的列照常帶回', async () => {
+    const { sheets } = await loadSheets(monthRoute([
+      [...TX_MONTH_HEADERS],
+      ['2026-08-23', '收入', '現金', '', 1200, '', 'tx-1', 'c1', ''],
+      ['2026-08-24', '收入', '現金', '', '一千二', '', 'tx-2', 'c1', ''],
+    ]))
+    const r = await sheets.pullAllTransactionsFromSheets('SS', [cat({})])
+    expect(r.unreadableMonths).toEqual(['2026-08'])
+    expect(r.seeds.map(x => x.id)).toEqual(['tx-1'])
+  })
+
+  it('使用者手動加的列（有內容、沒有 id）也擋下該月改寫', async () => {
+    const { sheets } = await loadSheets(monthRoute([
+      [...TX_MONTH_HEADERS],
+      ['2026-08-23', '收入', '現金', '', 1200, '手寫備忘', '', '', ''],
+    ]))
+    const r = await sheets.pullAllTransactionsFromSheets('SS', [cat({})])
+    expect(r.unreadableMonths).toEqual(['2026-08'])
+  })
+
+  it('純空白列不算讀不懂（不該無謂擋下整月改寫）', async () => {
+    const { sheets } = await loadSheets(monthRoute([
+      [...TX_MONTH_HEADERS],
+      ['2026-08-23', '收入', '現金', '', 1200, '', 'tx-1', 'c1', ''],
+      ['', '', '', '', '', '', '', '', ''],
+    ]))
+    const r = await sheets.pullAllTransactionsFromSheets('SS', [cat({})])
+    expect(r.unreadableMonths).toEqual([])
+    expect(r.seeds).toHaveLength(1)
+  })
+
   it('舊彙總格式月份被標記為待改寫，並就地拆解成逐筆交易', async () => {
     const { sheets } = await loadSheets(monthRoute([
       ['日期', '現金', '備註', '總收入', '總支出', '淨利'],
@@ -195,6 +249,10 @@ describe('syncMonthTransactionsToSheets — 整月覆蓋寫入', () => {
     // 🔴 沒先 clear 就 PUT：交易筆數變少時，舊列會殘留在雲端變成幽靈帳目
     expect(clearIdx).toBeGreaterThanOrEqual(0)
     expect(clearIdx).toBeLessThan(calls.indexOf(put))
+    // 🔴 RAW（2.5.0）：USER_ENTERED 會讓 Sheets 替我們決定型別——日期被轉成日期儲存格、
+    //    備註若長得像公式會被當公式解析。同 2.4.1 _config 的教訓。
+    expect(put.url).toContain('valueInputOption=RAW')
+    expect(put.url).not.toContain('USER_ENTERED')
     expect(put.body.values[0]).toEqual([...TX_MONTH_HEADERS])
     expect(put.body.values[1][0]).toBe('2026-08-23')
     expect(put.body.values[1][4]).toBe(1200)

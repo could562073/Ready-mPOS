@@ -382,7 +382,11 @@ export async function pullConfigFromSheets(spreadsheetId: string): Promise<Categ
   const token = await acquireToken()
   try {
     const data = await sheetsGet<{ values?: unknown[][] }>(
-      `/${spreadsheetId}/values/${encodeURIComponent(CONFIG_TAB + '!A1:J')}`,   // J = deleted（2.3.0）
+      // 🔴 UNFORMATTED_VALUE（2.5.0）：2.4.1 的布林欄事故就是 FORMATTED_VALUE 把布林
+      //    儲存格顯示成大寫 'TRUE'/'FALSE' 造成的。configRowsToCategories 的 parseSheetBool
+      //    兩種都認得，但拿真值才是正解——顯示格式不該影響類別設定的解讀。
+      `/${spreadsheetId}/values/${encodeURIComponent(CONFIG_TAB + '!A1:J')}` +   // J = deleted（2.3.0）
+      `?valueRenderOption=UNFORMATTED_VALUE`,
       token,
     )
     // 解析與欄位容錯全在純函式裡（categories.ts，Vitest 覆蓋）
@@ -505,6 +509,9 @@ export function parseOldMonthRows(
 
 // 從雲端試算表還原所有月份資料
 // 需傳入 categories（先呼叫 pullConfigFromSheets 取得），以正確分類 income / expense
+// ⚠️ 死碼：Phase 5/7 起無任何呼叫方（舊 DailyRecord 彙總格式路徑）。
+//    刻意不跟進 2.5.0 的 RAW / UNFORMATTED_VALUE 切換——改沒人跑的程式是純風險。
+//    若日後要重新接線，必須連同這兩項一起處理。
 export async function pullAllFromSheets(spreadsheetId: string, categories: Category[]): Promise<DailyRecord[]> {
   const token = await acquireToken()
   const titles = await getSheetTitles(spreadsheetId, token)
@@ -541,6 +548,10 @@ export async function backupSpreadsheet(spreadsheetId: string): Promise<string> 
   const tabs: { title: string; values: unknown[][] }[] = []
   for (const title of titles) {
     const data = await sheetsGet<{ values?: unknown[][] }>(
+      // 🔴 這裡刻意維持預設的 FORMATTED_VALUE（不跟進 2.5.0 的 UNFORMATTED_VALUE 切換）：
+      //    備份表是「改寫出錯時給人看的災難復原檔」，沒有任何程式會再讀回它。
+      //    UNFORMATTED_VALUE 會把日期儲存格變成序號（46257），等於把唯一一份
+      //    救命資料變成人看不懂的數字——對備份的實際用途是降級而非升級。
       `/${spreadsheetId}/values/${encodeURIComponent(title + '!A1:ZZ')}`,
       token,
     )
@@ -653,13 +664,20 @@ export async function syncMonthTransactionsToSheets(
   ]
   await sheetsValuesClear(spreadsheetId, month, token)
   await sheetsPut(
-    `/${spreadsheetId}/values/${encodeURIComponent(month + '!A1')}?valueInputOption=USER_ENTERED`,
+    // 🔴 RAW（2.5.0，同 _config 於 2.4.1 的改法）：USER_ENTERED 的語意是「當成使用者手打」，
+    //    Sheets 會替我們決定型別——日期字串被轉成日期儲存格、備註若長得像公式會被當公式解析。
+    //    RAW 原樣存入：金額本來就是 JSON 數字（仍存成數值），日期存成 '2026-08-23' 文字，
+    //    parseSheetDate 兩種都認得，且不再受使用者的地區日期格式影響。
+    `/${spreadsheetId}/values/${encodeURIComponent(month + '!A1')}?valueInputOption=RAW`,
     { range: `${month}!A1`, majorDimension: 'ROWS', values },
     token,
   )
 }
 
 // 將某月所有記錄整批寫入 Google Sheets（覆蓋式）
+// ⚠️ 死碼：Phase 5/7 起無任何呼叫方（舊 DailyRecord 彙總格式路徑）。
+//    刻意不跟進 2.5.0 的 RAW / UNFORMATTED_VALUE 切換——改沒人跑的程式是純風險。
+//    若日後要重新接線，必須連同這兩項一起處理。
 export async function syncMonthToSheets(
   spreadsheetId: string,
   month: string,
