@@ -279,7 +279,7 @@ export function useSyncService() {
 
       // ── Pull：Sheets → 本機 transactions（以 Transaction.id 去重對帳） ──
       // SYNCED 交易以雲端為主；PENDING 本機修改優先，不覆蓋（mergeTransactionsById 已處理判斷）
-      const { seeds, oldFormatMonths, upgradeMonths, categoryHints } =
+      const { seeds, oldFormatMonths, upgradeMonths, categoryHints, unreadableMonths } =
         await pullAllTransactionsFromSheets(sheetId, categories)
 
       // 🔴 孤兒類別回收（2.3.0）：雲端交易列引用到 _config 已經沒有的類別 id
@@ -338,8 +338,10 @@ export function useSyncService() {
       // 🔴 改寫月份 gating 抽為純函式 planMonthsToRewrite（Vitest 鎖定資料保護）：
       //    備份失敗時舊格式月份一律排除（即使有本機 PENDING），upgradeMonths（補 ID 欄）不受備份門檻限制。
       //    v3 遷移把所有歷史交易標為 PENDING，故 cutover 時 pendingMonths ⊇ 全部歷史舊格式月份，此保護為主場景。
+      //    🔴 unreadableMonths（該月有列的金額/日期讀不出來）優先於以上所有規則一律排除：
+      //    整月改寫是「以本機內容重建整個分頁」，讀不進來的列不在本機內容裡，照寫等於把它刪掉。
       const monthsToRewrite = planMonthsToRewrite({
-        pendingMonths, oldFormatMonths: oldSet, upgradeMonths, allowOldRewrite,
+        pendingMonths, oldFormatMonths: oldSet, upgradeMonths, allowOldRewrite, unreadableMonths,
       })
 
       let rewriteIdx = 0
@@ -368,6 +370,18 @@ export function useSyncService() {
         // 客戶完全不會知道類別改動沒上雲——正是我們在修的那類靜默失敗。
         // 共用失敗處理只在這裡跑一次，診斷探針不會重複打。
         await handleSyncFailure('sync/config', configErr)
+      } else if (unreadableMonths.length > 0) {
+        // 有月份因為含讀不懂的列而被跳過改寫（2.5.0）。寫入本身是正常的，
+        // 所以照樣 markSyncOk（清暫停、記錄成功時間）——這不是權限或容量問題，
+        // 用 UNKNOWN 才不會觸發 shouldPauseFor 把其他月份的同步一起停掉。
+        // 但必須讓老闆看得見：這些月份的新帳目暫時不會上雲，且原因在雲端那張表上。
+        setSyncError({
+          kind: 'UNKNOWN',
+          message: `雲端試算表的 ${unreadableMonths.join('、')} 分頁有讀不懂的資料列（日期或金額格式異常），`
+            + `為了不覆蓋掉那些資料，這些月份暫時不會自動更新。你的帳目在本機都完好，`
+            + `請檢查該分頁是否被手動改過格式。`,
+        })
+        markSyncOk()
       } else {
         // 清除失敗提示。刻意也清掉「本輪備份失敗」設下的提示：備份失敗只代表舊格式
         // 月份延後轉換，帳目本身已成功上雲，此時再顯示「只存在本機」是錯的。
@@ -409,10 +423,21 @@ export function useSyncService() {
       const cloudCategories = await pullConfigFromSheets(sheetId)
       const categories = cloudCategories ?? getCategories()
 
-      const { seeds } = await pullAllTransactionsFromSheets(sheetId, categories)
+      const { seeds, unreadableMonths } = await pullAllTransactionsFromSheets(sheetId, categories)
       await db.transactions.clear()
       if (seeds.length > 0) {
         await db.transactions.bulkAdd(seeds)
+      }
+      // 還原＝以雲端覆蓋本機。若雲端有讀不懂的列，它們不會進到本機，
+      // 使用者會看到帳目「少了幾筆」卻沒有任何說明——必須講出來。
+      // （雲端資料本身沒動，還原是唯讀 pull，修好格式後可再還原一次）
+      if (unreadableMonths.length > 0) {
+        setSyncError({
+          kind: 'UNKNOWN',
+          message: `還原完成，但雲端試算表的 ${unreadableMonths.join('、')} 分頁有讀不懂的資料列`
+            + `（日期或金額格式異常），這些列沒有還原到本機。雲端上的原始資料仍在，`
+            + `修正該分頁格式後可再還原一次。`,
+        })
       }
     } catch (err) {
       console.error('[restore] failed:', err)

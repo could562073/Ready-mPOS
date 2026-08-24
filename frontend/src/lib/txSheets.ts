@@ -24,9 +24,10 @@ export function isNewTxFormat(header: string[]): boolean {
 // 這與 2.4.1 的 _config 布林欄事故是同一個根因：把顯示層字串當成資料真值解析，
 // 而且解析邏輯埋在網路函式裡、不是純函式，於是完全沒有測試覆蓋。
 //
-// ⚠️ 這兩個函式此版尚未接線（rowToTx 仍為舊寫法，行為不變）。接線與
-// 「寫入改 RAW + 讀取改 UNFORMATTED_VALUE」屬同一次變更，會在下一輪一起做；
-// 這裡先獨立落地並用測試把行為鎖死，避免重演「邏輯夾在 I/O 裡＝零覆蓋」。
+// ✅ 2.5.0 已接線至 rowToTx（回傳型別見下方 RowParse），讀取亦已改
+// UNFORMATTED_VALUE、月份寫入改 RAW。🔴 接線的同時必須有「讀不懂就不改寫該月」
+// 的防線（unreadableMonths → planMonthsToRewrite），否則「跳過讀不懂的列」
+// 加上「整月 clear+覆蓋」等於把那列從雲端刪掉，比原本吞成 0 更糟。
 
 /**
  * 解析 Sheets 金額儲存格 → number；無法可靠解析時回 null。
@@ -121,33 +122,67 @@ export function txToRow(tx: Transaction | TxSeed, catById: Map<string, Category>
 // Sheets 列 → 交易 seed。解析優先序：一級ID/二級ID 欄（改名不受影響）→ 名稱對照
 // （2.0.0 的 7 欄舊列、或使用者手動在試算表只填名稱的列）→ 都對不到則保留原始字串（不丟資料）。
 // 缺 id 或缺日期視為無效列，回 null 讓呼叫端略過
-export function rowToTx(
-  row: string[], header: string[],
-  catByName: Map<string, Category>, catById: Map<string, Category>, now: string,
-): TxSeed | null {
-  const g = (col: string) => row[header.indexOf(col)]
-  const date = (g('日期') ?? '').trim()
-  const id   = (g('id') ?? '').trim()
-  if (!date || !id) return null
+// 單列解析結果（2.5.0）：🔴 刻意把「本來就不是交易」與「是交易但讀不懂」分成兩種，
+// 不能共用一個 null。兩者都會被略過不寫進本機，但後果天差地遠——
+//   skip       ＝ 空白列／沒有 id 的裝飾列，本來就沒有資料，略過無損。
+//   unreadable ＝ 這列有內容，但金額或日期解析不出來。若當成 skip 略過，
+//                 該月又剛好被整月 clear+覆蓋改寫，這列就從雲端永久消失。
+//                 因此必須往上冒泡成 unreadableMonths，讓該月本輪一律不改寫。
+export type RowParse =
+  | { kind: 'tx'; seed: TxSeed }
+  | { kind: 'skip' }
+  | { kind: 'unreadable' }
 
-  const type: 'income' | 'expense' = g('收支') === '支出' ? 'expense' : 'income'
-  const primaryName = (g('一級類別') ?? '').trim()
-  const catIdVal = (g('一級ID') ?? '').trim()
+// 這列是否含有任何實質內容（用來區分「空白列」與「讀不懂的列」）
+function rowHasContent(row: unknown[]): boolean {
+  return row.some(v => v !== undefined && v !== null && String(v).trim() !== '')
+}
+
+export function rowToTx(
+  row: unknown[], header: string[],
+  catByName: Map<string, Category>, catById: Map<string, Category>, now: string,
+): RowParse {
+  const g = (col: string) => row[header.indexOf(col)]
+  const str = (col: string) => String(g(col) ?? '').trim()
+
+  const rawDate = g('日期')
+  const id = str('id')
+  // 沒有 id 就不是本 app 寫出的交易列。有內容代表可能是使用者手動加的列，
+  // 略過它本身無害，但不能連帶把整月改寫掉 → 標為 unreadable 擋下改寫。
+  if (!id) return rowHasContent(row) ? { kind: 'unreadable' } : { kind: 'skip' }
+
+  // 🔴 日期解析失敗一律不猜：猜錯會讓整筆交易落到錯的月份，在月結中憑空消失
+  const date = parseSheetDate(rawDate)
+  if (!date) return { kind: 'unreadable' }
+
+  // 金額：空儲存格視為 0（沿用既有行為，本 app 寫出的列不會是空的）；
+  // 🔴 但「有值卻解析不出來」絕不能當成 0——0 是合法金額，
+  //    拿它當解析失敗的哨兵值等於授權一次壞掉的讀取覆寫使用者的真實帳目。
+  const rawAmount = g('金額')
+  const amountEmpty = rawAmount === undefined || rawAmount === null || String(rawAmount).trim() === ''
+  const amount = amountEmpty ? 0 : parseSheetAmount(rawAmount)
+  if (amount === null) return { kind: 'unreadable' }
+
+  const type: 'income' | 'expense' = str('收支') === '支出' ? 'expense' : 'income'
+  const primaryName = str('一級類別')
+  const catIdVal = str('一級ID')
   // 一級ID 有值但指向已刪類別時，cat 退回名稱對照（供二級名稱解析用），categoryId 仍保留該 id
   const cat = (catIdVal ? catById.get(catIdVal) : undefined) ?? catByName.get(primaryName)
   const categoryId = catIdVal || (cat?.id ?? primaryName)
-  const subName = (g('二級類別') ?? '').trim()
-  const subIdVal = (g('二級ID') ?? '').trim()
+  const subName = str('二級類別')
+  const subIdVal = str('二級ID')
   const subId = subIdVal || (subName && cat ? (cat.subs?.find(s => s.name === subName)?.id ?? null) : null)
-  const note = (g('備註') ?? '').trim()
+  const note = str('備註')
 
   return {
-    id, date, type, categoryId, subId,
-    amount: Number(g('金額')) || 0,
-    note: note || undefined,
-    syncStatus: 'SYNCED',
-    createdAt: now,
-    updatedAt: now,
+    kind: 'tx',
+    seed: {
+      id, date, type, categoryId, subId, amount,
+      note: note || undefined,
+      syncStatus: 'SYNCED',
+      createdAt: now,
+      updatedAt: now,
+    },
   }
 }
 
@@ -167,8 +202,8 @@ export interface CategoryHint {
 // 從「已解析的交易 seed + 原始列」抽出類別線索。
 // id 一律取自 seed（= 交易實際引用的值，與 rowToTx 的解析結果一致，不會自己再推一次），
 // 名稱取自列上的顯示欄位。
-export function categoryHintsFromRow(seed: TxSeed, row: string[], header: string[]): CategoryHint[] {
-  const g = (col: string) => (row[header.indexOf(col)] ?? '').trim()
+export function categoryHintsFromRow(seed: TxSeed, row: unknown[], header: string[]): CategoryHint[] {
+  const g = (col: string) => String(row[header.indexOf(col)] ?? '').trim()
   const hints: CategoryHint[] = [
     { kind: 'primary', id: seed.categoryId, name: g('一級類別'), type: seed.type },
   ]
@@ -189,17 +224,24 @@ export interface TxMergePlan {
 //  - allowOldRewrite=true 時，所有舊格式月份都一併改寫（cutover 轉新格式）。
 //  - upgradeMonths（缺「一級ID」欄的 2.0.0 新格式月份）一律就地補欄——屬加欄改寫、不動舊彙總資料，
 //    不受舊格式備份門檻限制。
+//  - 🔴 unreadableMonths（該月有列的金額/日期解析不出來）一律排除，優先於以上所有規則（2.5.0）。
 export function planMonthsToRewrite(input: {
   pendingMonths: Iterable<string>
   oldFormatMonths: Iterable<string>
   upgradeMonths: Iterable<string>
   allowOldRewrite: boolean
+  unreadableMonths?: Iterable<string>
 }): string[] {
   const oldSet = new Set(input.oldFormatMonths)
   const out = new Set<string>()
   for (const m of input.pendingMonths) if (input.allowOldRewrite || !oldSet.has(m)) out.add(m)
   if (input.allowOldRewrite) for (const m of oldSet) out.add(m)
   for (const m of input.upgradeMonths) out.add(m)
+  // 🔴 最後一道、優先於以上所有規則：該月有讀不懂的列 → 本輪絕不 clear+覆蓋。
+  //    整月覆蓋是「以本機內容重建整個分頁」，讀不懂的列不在本機內容裡，
+  //    照寫就等於把它從雲端刪除。寧可該月這輪不上雲（本機資料完好，下次再試），
+  //    也不能拿使用者的雲端帳目去賭我們的解析器。同 upgradeMonths 也一併擋下。
+  for (const m of input.unreadableMonths ?? []) out.delete(m)
   return [...out]
 }
 
