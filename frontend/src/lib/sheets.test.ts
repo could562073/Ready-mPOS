@@ -258,3 +258,74 @@ describe('syncMonthTransactionsToSheets — 整月覆蓋寫入', () => {
     expect(put.body.values[1][4]).toBe(1200)
   })
 })
+
+// ── parseOldMonthRows（舊彙總格式解析）────────────────────────────────────────
+// 🔴 這條路徑對正式站客戶是「活的」：其診斷回報的 oldMonthCount 自 2026-07-29
+// 起一直是 1，代表雲端始終有一個尚未轉檔的舊格式月份。2.5.0 把月份讀取改成
+// UNFORMATTED_VALUE 時，這裡差點出事——舊格式分頁是 2.0 之前用 USER_ENTERED
+// 寫的，日期欄在雲端是**真的日期儲存格**，改讀之後拿到的是序號而不是字串，
+// 若沿用舊的字串解析，explodeDailyRecord 的決定性 id 會變成 mpos:46257:...
+// 而與本機 id 對不起來，整批歷史帳目會被當成新資料重複匯入。
+describe('parseOldMonthRows — 舊彙總格式', () => {
+  const OLD_HEADER = ['日期', '現金', '食材採購', '項目備註', '備註']
+  const oldCats = [
+    cat({ id: 'c1', name: '現金', type: 'income' }),
+    cat({ id: 'c2', name: '食材採購', type: 'expense' }),
+  ]
+
+  it('🔴 日期為序號（UNFORMATTED_VALUE）→ 正確還原成 YYYY-MM-DD', async () => {
+    const { sheets } = await loadSheets(() => undefined)
+    const r = sheets.parseOldMonthRows([OLD_HEADER, [46257, 1200, 300, '', '']], oldCats)
+
+    expect(r.unreadable).toBe(false)
+    expect(r.records).toHaveLength(1)
+    expect(r.records[0].date).toBe('2026-08-23')
+    expect(r.records[0].incomes).toEqual({ c1: 1200 })
+    expect(r.records[0].expenses).toEqual({ c2: 300 })
+  })
+
+  it('日期為字串（FORMATTED_VALUE 殘留）仍然讀得懂', async () => {
+    const { sheets } = await loadSheets(() => undefined)
+    const r = sheets.parseOldMonthRows([OLD_HEADER, ['2026-08-23', 1200, 0, '', '']], oldCats)
+
+    expect(r.unreadable).toBe(false)
+    expect(r.records[0].date).toBe('2026-08-23')
+  })
+
+  it('🔴 日期讀不出來 → 標記 unreadable 並跳過該列，絕不猜一個日期', async () => {
+    const { sheets } = await loadSheets(() => undefined)
+    const r = sheets.parseOldMonthRows(
+      [OLD_HEADER, ['第三季', 1200, 0, '', ''], ['2026-08-24', 500, 0, '', '']], oldCats)
+
+    // 猜錯日期會讓整天的帳目落到錯誤月份、在月結中憑空消失
+    expect(r.unreadable).toBe(true)
+    expect(r.records).toHaveLength(1)
+    expect(r.records[0].date).toBe('2026-08-24')
+  })
+
+  it('🔴 金額有值卻解析不出來 → unreadable，絕不當成 0', async () => {
+    const { sheets } = await loadSheets(() => undefined)
+    const r = sheets.parseOldMonthRows([OLD_HEADER, ['2026-08-23', '待確認', 300, '', '']], oldCats)
+
+    // 0 是合法金額，拿它當解析失敗的哨兵值＝授權一次壞掉的讀取覆寫真實帳目
+    expect(r.unreadable).toBe(true)
+    expect(r.records[0].incomes).toEqual({})
+    expect(r.records[0].expenses).toEqual({ c2: 300 })
+  })
+
+  it('金額為千分位字串 → 正確解析，不歸零', async () => {
+    const { sheets } = await loadSheets(() => undefined)
+    const r = sheets.parseOldMonthRows([OLD_HEADER, ['2026-08-23', '1,234', 0, '', '']], oldCats)
+
+    expect(r.unreadable).toBe(false)
+    expect(r.records[0].incomes).toEqual({ c1: 1234 })
+  })
+
+  it('日期欄空白的列 → 單純略過，不算 unreadable（不觸發誤報橫幅）', async () => {
+    const { sheets } = await loadSheets(() => undefined)
+    const r = sheets.parseOldMonthRows([OLD_HEADER, ['', '', '', '', ''], ['2026-08-23', 100, 0, '', '']], oldCats)
+
+    expect(r.unreadable).toBe(false)
+    expect(r.records).toHaveLength(1)
+  })
+})
