@@ -5,6 +5,7 @@ import {
 } from './categories'
 import {
   TX_MONTH_HEADERS, isNewTxFormat, txToRow, rowToTx, categoryHintsFromRow,
+  parseSheetAmount, parseSheetDate,
   type TxSeed, type CategoryHint,
 } from './txSheets'
 import { explodeDailyRecord } from './migrate'
@@ -444,20 +445,35 @@ function recordToRow(r: DailyRecord, categories: Category[]): (string | number)[
 // ── 核心同步函式 ───────────────────────────────────────────
 
 // 舊彙總格式：單一月份分頁 rows → DailyRecord[]（沿用既有解析：未知欄位略過、項目備註反解析）
-export function parseOldMonthRows(rows: string[][], categories: Category[]): DailyRecord[] {
+// 🔴 2.5.0：日期與金額改走 parseSheetDate / parseSheetAmount。舊格式分頁是 2.0.0 以前用
+//    USER_ENTERED 寫出的，日期多半已是真的日期儲存格 → UNFORMATTED_VALUE 會讀回序號（46257），
+//    直接當字串用會讓 explodeDailyRecord 的決定性 id 變成 `mpos:46257:...`、整月落到錯的地方。
+//    unreadable 一併回報：舊格式月份改寫（clear+覆蓋）前若有讀不懂的列，該月本輪一律不改寫。
+export function parseOldMonthRows(
+  rows: unknown[][], categories: Category[],
+): { records: DailyRecord[]; unreadable: boolean } {
   const now = new Date().toISOString()
   const catByName = new Map(categories.map(c => [c.name, c]))
   const out: DailyRecord[] = []
-  if (rows.length < 2) return out
-  const header = rows[0]
+  let unreadable = false
+  if (rows.length < 2) return { records: out, unreadable }
+  const header = rows[0].map(v => String(v ?? ''))
+  const cell = (row: unknown[], col: string) => row[header.indexOf(col)]
   for (const row of rows.slice(1)) {
-    const date = row[header.indexOf(COL_DATE)]
-    if (!date) continue
+    const rawDate = cell(row, COL_DATE)
+    if (rawDate === undefined || rawDate === null || String(rawDate).trim() === '') continue
+    // 🔴 日期解析不出來不猜：猜錯會讓整天的帳目落到錯誤月份
+    const date = parseSheetDate(rawDate)
+    if (!date) { unreadable = true; continue }
     const incomes: Record<string, number> = {}
     const expenses: Record<string, number> = {}
     header.forEach((colName, i) => {
       if (FIXED_COLS.has(colName)) return
-      const val = Number(row[i]) || 0
+      const raw = row[i]
+      if (raw === undefined || raw === null || String(raw).trim() === '') return
+      // 🔴 有值卻解析不出來 ≠ 0：0 是合法金額，當成 0 等於用壞掉的讀取覆寫真實帳目
+      const val = parseSheetAmount(raw)
+      if (val === null) { unreadable = true; return }
       if (val === 0) return
       const cat = catByName.get(colName)
       if (cat?.type === 'expense') expenses[cat.id] = val
@@ -465,7 +481,7 @@ export function parseOldMonthRows(rows: string[][], categories: Category[]): Dai
     })
     const incomeNotes: Record<string, string> = {}
     const expenseNotes: Record<string, string> = {}
-    const rawItemNotes = (row[header.indexOf(COL_ITEM_NOTES)] ?? '').trim()
+    const rawItemNotes = String(cell(row, COL_ITEM_NOTES) ?? '').trim()
     if (rawItemNotes) {
       for (const part of rawItemNotes.split(';')) {
         const sep = part.indexOf(':')
@@ -480,11 +496,11 @@ export function parseOldMonthRows(rows: string[][], categories: Category[]): Dai
     }
     out.push({
       date, incomes, expenses, incomeNotes, expenseNotes,
-      notes: row[header.indexOf(COL_NOTES)] ?? '',
+      notes: String(cell(row, COL_NOTES) ?? ''),
       syncStatus: 'SYNCED', createdAt: now, updatedAt: now,
     })
   }
-  return out
+  return { records: out, unreadable }
 }
 
 // 從雲端試算表還原所有月份資料
@@ -504,7 +520,7 @@ export async function pullAllFromSheets(spreadsheetId: string, categories: Categ
     const rows = data.values ?? []
     if (rows.length < 2) continue
 
-    records.push(...parseOldMonthRows(rows, categories))
+    records.push(...parseOldMonthRows(rows, categories).records)
   }
 
   return records
@@ -563,7 +579,10 @@ export async function backupSpreadsheet(spreadsheetId: string): Promise<string> 
 // 以及哪些是缺「一級ID」欄的 2.0.0 新格式（需就地升級改寫補 ID 欄——改名防護，無需備份）
 export async function pullAllTransactionsFromSheets(
   spreadsheetId: string, categories: Category[],
-): Promise<{ seeds: TxSeed[]; oldFormatMonths: string[]; upgradeMonths: string[]; categoryHints: CategoryHint[] }> {
+): Promise<{
+  seeds: TxSeed[]; oldFormatMonths: string[]; upgradeMonths: string[]
+  categoryHints: CategoryHint[]; unreadableMonths: string[]
+}> {
   const token = await acquireToken()
   const titles = await getSheetTitles(spreadsheetId, token)
   const monthTabs = titles.filter(t => /^\d{4}-\d{2}$/.test(t))
@@ -573,37 +592,52 @@ export async function pullAllTransactionsFromSheets(
   const seeds: TxSeed[] = []
   const oldFormatMonths: string[] = []
   const upgradeMonths: string[] = []
+  // 🔴 該月有列讀不懂（金額/日期解析不出來，或有內容卻沒有 id）→ 本輪不得改寫該月。
+  //    否則「略過讀不懂的列」＋「整月 clear+覆蓋」＝把那列從雲端永久刪除。
+  const unreadableMonths: string[] = []
   // 孤兒類別線索（2.3.0）：雲端列引用到本機 _config 已無的類別 id 時，
   // 靠這些線索把類別以墓碑補回來，否則那些金額會被月結的「已知類別 ID」過濾掉而消失
   const categoryHints: CategoryHint[] = []
 
   for (const month of monthTabs) {
-    const data = await sheetsGet<{ values?: string[][] }>(
-      `/${spreadsheetId}/values/${encodeURIComponent(month + '!A1:ZZ')}`, token,
+    const data = await sheetsGet<{ values?: unknown[][] }>(
+      // 🔴 UNFORMATTED_VALUE（2.5.0）：預設的 FORMATTED_VALUE 回的是「畫面上顯示的字串」，
+      //    使用者只要對金額欄套一次千分位或貨幣格式，讀回來就變 "1,234"。
+      //    這裡要的是儲存格真值，格式化與否都不該影響帳目。
+      `/${spreadsheetId}/values/${encodeURIComponent(month + '!A1:ZZ')}` +
+      `?valueRenderOption=UNFORMATTED_VALUE`, token,
     ).catch(() => ({ values: undefined }))
     const rows = data.values ?? []
     if (rows.length < 2) continue
-    const header = rows[0]
+    const header = rows[0].map(v => String(v ?? ''))
 
     if (isNewTxFormat(header)) {
       if (!header.includes('一級ID')) upgradeMonths.push(month)
+      let monthUnreadable = false
       for (const row of rows.slice(1)) {
-        const seed = rowToTx(row, header, catByName, catById, now)
-        if (!seed) continue
+        const parsed = rowToTx(row, header, catByName, catById, now)
+        if (parsed.kind === 'skip') continue
+        if (parsed.kind === 'unreadable') { monthUnreadable = true; continue }
+        const seed = parsed.seed
         seeds.push(seed)
         // 只有新格式列帶得出 id ↔ 名稱的對應；舊彙總格式本來就只有名稱、
         // 其 categoryId 是靠名稱查回來的，查不到就不是孤兒而是未知欄位，不需回收
         for (const h of categoryHintsFromRow(seed, row, header)) categoryHints.push(h)
       }
+      if (monthUnreadable) unreadableMonths.push(month)
     } else {
       // 舊彙總格式：解析成 DailyRecord 再逐筆拆解為交易，並標記此月需改寫
       oldFormatMonths.push(month)
-      for (const rec of parseOldMonthRows(rows, categories)) {
+      const old = parseOldMonthRows(rows, categories)
+      for (const rec of old.records) {
         for (const s of explodeDailyRecord(rec)) seeds.push(s)
       }
+      // 讀不懂的舊格式列同樣擋下該月改寫——舊格式改寫是「拆解後整月重建」，
+      // 沒讀進來的列不會出現在重建結果裡，照寫就等於刪掉它
+      if (old.unreadable) unreadableMonths.push(month)
     }
   }
-  return { seeds, oldFormatMonths, upgradeMonths, categoryHints }
+  return { seeds, oldFormatMonths, upgradeMonths, categoryHints, unreadableMonths }
 }
 
 // 將某月所有交易以新格式整批覆蓋寫入（先 clear 再 put，天然去除筆數變動殘留）

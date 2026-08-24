@@ -4,7 +4,14 @@ import {
   categoryHintsFromRow, parseSheetAmount, parseSheetDate,
 } from './txSheets'
 import type { Category, Transaction } from '../types'
-import type { TxSeed } from './txSheets'
+import type { TxSeed, RowParse } from './txSheets'
+
+// 解出成功解析的 seed；不是 tx 就直接讓測試爆掉，
+// 而不是靜默拿到 undefined 讓斷言變成空轉
+const okTx = (r: RowParse): TxSeed => {
+  if (r.kind !== 'tx') throw new Error(`expected tx, got ${r.kind}`)
+  return r.seed
+}
 
 const cat = (over: Partial<Category>): Category => ({
   id: 'c1', name: '雜項', icon: 'tag', color: 'coral', enabled: true, type: 'expense',
@@ -52,21 +59,39 @@ describe('rowToTx', () => {
   const H = ['日期', '收支', '一級類別', '二級類別', '金額', '備註', 'id']
 
   it('解析新格式列：名稱對回 id、收支轉 type、二級對回 subId', () => {
-    const seed = rowToTx(['2026-07-04', '支出', '雜項', '瓦斯費', '300', '七月', 't1'], H, catByName, catById, 'NOW')
+    const seed = okTx(rowToTx(['2026-07-04', '支出', '雜項', '瓦斯費', '300', '七月', 't1'], H, catByName, catById, 'NOW'))
     expect(seed).toEqual({
       id: 't1', date: '2026-07-04', type: 'expense', categoryId: 'c1', subId: 's1',
       amount: 300, note: '七月', syncStatus: 'SYNCED', createdAt: 'NOW', updatedAt: 'NOW',
     })
   })
   it('二級名稱找不到 → subId=null', () => {
-    expect(rowToTx(['2026-07-04', '支出', '雜項', '未知子', '300', '', 't2'], H, catByName, catById, 'NOW')!.subId).toBeNull()
+    expect(okTx(rowToTx(['2026-07-04', '支出', '雜項', '未知子', '300', '', 't2'], H, catByName, catById, 'NOW')).subId).toBeNull()
   })
   it('未知一級名稱 → categoryId 保留原始名稱字串（不丟資料）', () => {
-    expect(rowToTx(['2026-07-04', '收入', '外星收入', '', '50', '', 't3'], H, catByName, catById, 'NOW')!.categoryId).toBe('外星收入')
+    expect(okTx(rowToTx(['2026-07-04', '收入', '外星收入', '', '50', '', 't3'], H, catByName, catById, 'NOW')).categoryId).toBe('外星收入')
   })
-  it('缺 id 或缺日期 → 回 null（略過該列）', () => {
-    expect(rowToTx(['2026-07-04', '支出', '雜項', '', '300', '', ''], H, catByName, catById, 'NOW')).toBeNull()
-    expect(rowToTx(['', '支出', '雜項', '', '300', '', 't4'], H, catByName, catById, 'NOW')).toBeNull()
+  // 🔴 2.5.0 起「有內容但讀不懂」與「本來就是空白列」分成兩種：前者會擋下整月改寫
+  it('有內容卻缺 id 或缺日期 → unreadable（擋下該月改寫，不得當空白列略過）', () => {
+    expect(rowToTx(['2026-07-04', '支出', '雜項', '', '300', '', ''], H, catByName, catById, 'NOW').kind).toBe('unreadable')
+    expect(rowToTx(['', '支出', '雜項', '', '300', '', 't4'], H, catByName, catById, 'NOW').kind).toBe('unreadable')
+  })
+  it('整列空白 → skip（真的沒資料，略過無損）', () => {
+    expect(rowToTx([], H, catByName, catById, 'NOW').kind).toBe('skip')
+    expect(rowToTx(['', '', '', '', '', '', ''], H, catByName, catById, 'NOW').kind).toBe('skip')
+  })
+  it('🔴 金額有值卻解析不出來 → unreadable，絕不當成 0', () => {
+    const r = rowToTx(['2026-07-04', '支出', '雜項', '', '一百元', '', 't5'], H, catByName, catById, 'NOW')
+    expect(r.kind).toBe('unreadable')
+  })
+  it('金額儲存格為空 → 視為 0（本 app 寫出的列不會是空的，沿用既有行為）', () => {
+    expect(okTx(rowToTx(['2026-07-04', '支出', '雜項', '', '', '', 't6'], H, catByName, catById, 'NOW')).amount).toBe(0)
+  })
+  it('金額被套用千分位格式讀回 "1,234" → 正確解析成 1234（不再吞成 0）', () => {
+    expect(okTx(rowToTx(['2026-07-04', '支出', '雜項', '', '1,234', '', 't7'], H, catByName, catById, 'NOW')).amount).toBe(1234)
+  })
+  it('日期讀回序號（UNFORMATTED_VALUE 的日期儲存格）→ 正確還原', () => {
+    expect(okTx(rowToTx([46257, '收入', '雜項', '', 100, '', 't8'], H, catByName, catById, 'NOW')).date).toBe('2026-08-23')
   })
 })
 
@@ -75,22 +100,22 @@ describe('rowToTx（一級ID/二級ID 欄，改名防護）', () => {
   const H9 = [...TX_MONTH_HEADERS]
 
   it('🔴 改名情境：名稱欄是改名前的舊名，但一級ID/二級ID 欄可解析 → 不退化成未知類別', () => {
-    const seed = rowToTx(['2026-07-04', '支出', '舊雜項', '舊瓦斯費', '300', '', 't1', 'c1', 's1'], H9, catByName, catById, 'NOW')
-    expect(seed!.categoryId).toBe('c1')
-    expect(seed!.subId).toBe('s1')
+    const seed = okTx(rowToTx(['2026-07-04', '支出', '舊雜項', '舊瓦斯費', '300', '', 't1', 'c1', 's1'], H9, catByName, catById, 'NOW'))
+    expect(seed.categoryId).toBe('c1')
+    expect(seed.subId).toBe('s1')
   })
   it('一級ID 欄為空 → 退回名稱對照（手動在試算表補的列只填名稱也能解析）', () => {
-    const seed = rowToTx(['2026-07-04', '支出', '雜項', '瓦斯費', '300', '', 't1', '', ''], H9, catByName, catById, 'NOW')
-    expect(seed!.categoryId).toBe('c1')
-    expect(seed!.subId).toBe('s1')
+    const seed = okTx(rowToTx(['2026-07-04', '支出', '雜項', '瓦斯費', '300', '', 't1', '', ''], H9, catByName, catById, 'NOW'))
+    expect(seed.categoryId).toBe('c1')
+    expect(seed.subId).toBe('s1')
   })
   it('一級ID 指向已刪除的類別 → 保留該 id（不丟資料）', () => {
-    const seed = rowToTx(['2026-07-04', '支出', '早就刪了', '', '300', '', 't1', 'deadCat', ''], H9, catByName, catById, 'NOW')
-    expect(seed!.categoryId).toBe('deadCat')
+    const seed = okTx(rowToTx(['2026-07-04', '支出', '早就刪了', '', '300', '', 't1', 'deadCat', ''], H9, catByName, catById, 'NOW'))
+    expect(seed.categoryId).toBe('deadCat')
   })
   it('二級ID 欄為空且二級名稱也空 → subId=null', () => {
-    const seed = rowToTx(['2026-07-04', '支出', '雜項', '', '300', '', 't1', 'c1', ''], H9, catByName, catById, 'NOW')
-    expect(seed!.subId).toBeNull()
+    const seed = okTx(rowToTx(['2026-07-04', '支出', '雜項', '', '300', '', 't1', 'c1', ''], H9, catByName, catById, 'NOW'))
+    expect(seed.subId).toBeNull()
   })
 })
 
@@ -147,6 +172,36 @@ describe('planMonthsToRewrite（改寫月份 gating）', () => {
       allowOldRewrite: true,
     })
     expect(new Set(r)).toEqual(new Set(['2026-05', '2026-06', '2026-07']))
+  })
+
+  // 🔴 2.5.0：unreadableMonths 是最後一道、優先於以上所有規則的排除
+  it('該月有讀不懂的列 → 一律排除，即使同時是 PENDING 月份', () => {
+    const r = planMonthsToRewrite({
+      pendingMonths: ['2026-07', '2026-08'],
+      oldFormatMonths: [],
+      upgradeMonths: [],
+      allowOldRewrite: true,
+      unreadableMonths: ['2026-08'],
+    })
+    expect(r).toEqual(['2026-07'])
+  })
+
+  it('讀不懂的列優先於「升級月份不受門檻限制」：upgradeMonths 也擋得下來', () => {
+    const r = planMonthsToRewrite({
+      pendingMonths: [],
+      oldFormatMonths: ['2026-08'],
+      upgradeMonths: ['2026-08'],
+      allowOldRewrite: true,
+      unreadableMonths: ['2026-08'],
+    })
+    expect(r).toEqual([])
+  })
+
+  it('unreadableMonths 未提供時行為不變（向後相容）', () => {
+    const r = planMonthsToRewrite({
+      pendingMonths: ['2026-07'], oldFormatMonths: [], upgradeMonths: [], allowOldRewrite: false,
+    })
+    expect(r).toEqual(['2026-07'])
   })
 
   it('缺一級ID的升級月份不受備份門檻限制，一律納入', () => {
