@@ -114,6 +114,18 @@ export function useSyncService() {
   // 用此旗標讓「顯示阻擋層＋跑備份」在單次 App 開啟中最多一次；之後的同步只做輕量新格式推拉。
   const migrationTriedRef = useRef(false)
 
+  // 需要使用者點一下才能重新連線（2.5.1）。
+  // 🔴 kind 刻意用 'UNKNOWN'：它不在 shouldPauseFor 的持久性成因清單內，
+  //    所以**不會觸發同步暫停**。這不是「壞掉」，只是 token 到期要點一下；
+  //    把整個同步暫停掉反而害帳目更晚上雲。
+  const showReconnectNeeded = useCallback(() => {
+    setSyncError({
+      kind: 'UNKNOWN',
+      message: NEEDS_RECONNECT_MESSAGE,
+      retryLabel: RECONNECT_ACTION_LABEL,
+    })
+  }, [])
+
   // GIS script 非同步載入，輪詢直到 google.accounts 可用。
   // 2.5.1：啟動時不再嘗試取 token（見下方 init() 內註解），也移除原本每 50 分鐘的定時器。
   useEffect(() => {
@@ -153,20 +165,13 @@ export function useSyncService() {
       if ((window as any).google?.accounts) { clearInterval(id); init() }
     }, 300)
     return () => clearInterval(id)
+    // 🔴 這個 effect 刻意只跑一次（掛載時）：它做的是「開 App 的一次性啟動流程」
+    //    ——初始化 GIS、判斷 token 是否還有效、決定要自動同步還是請使用者重新連線。
+    //    deps 只列 showReconnectNeeded（它是 useCallback(…, []) ＝身分穩定，列了等同只跑一次）；
+    //    真正被這行 disable 放行的是 syncAll——把它放進 deps 會讓身分一變就重跑整套啟動流程，
+    //    等於每次重算都可能多打一輪同步，所以在此關閉 exhaustive-deps。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // 需要使用者點一下才能重新連線（2.5.1）。
-  // 🔴 kind 刻意用 'UNKNOWN'：它不在 shouldPauseFor 的持久性成因清單內，
-  //    所以**不會觸發同步暫停**。這不是「壞掉」，只是 token 到期要點一下；
-  //    把整個同步暫停掉反而害帳目更晚上雲。
-  const showReconnectNeeded = useCallback(() => {
-    setSyncError({
-      kind: 'UNKNOWN',
-      message: NEEDS_RECONNECT_MESSAGE,
-      retryLabel: RECONNECT_ACTION_LABEL,
-    })
-  }, [])
+  }, [showReconnectNeeded])
 
   // 同步失敗的共用處理（2.2.2）：跑診斷探針 → 分類 → 設定使用者可見狀態 → 帶著診斷回報。
   // 🔴 隱私：extra 只放數字／布林／scope 字串（errorReport 的 redact 不套用到 extra，
@@ -213,7 +218,7 @@ export function useSyncService() {
           : {}),
       })
     },
-    [],
+    [showReconnectNeeded],
   )
 
   // 使用者手動關閉提示（下次同步再失敗會重新出現）
@@ -421,7 +426,7 @@ export function useSyncService() {
       setMigrating(false)
       setMigrateMsg('')
     }
-  }, [handleSyncFailure, markSyncOk])
+  }, [handleSyncFailure, markSyncOk, showReconnectNeeded])
 
   // 自動同步（記帳後／恢復連線／開 App）——吃暫停閘門。
   // 🔴 刻意寫成無參數：它同時被當成 window 'online' 事件與 React onClick 的 handler，
