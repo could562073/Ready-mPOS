@@ -98,3 +98,40 @@ export function writeFailureMessage(kind: WriteFailureKind): string {
       return '雲端同步失敗，帳目已安全存在本機，稍後會自動重試。'
   }
 }
+
+// ── 需要使用者點一下才能重新連線（2.5.1）──────────────────────────────────
+//
+// 背景：GIS 的 tokenClient **沒有靜默模式**，requestAccessToken 一定開 popup 視窗；
+// prompt:'' 只是叫 Google 別在 popup 裡顯示同意／選帳號畫面，popup 本身照開。
+// 瀏覽器只允許使用者手勢觸發的 popup，所以從啟動 effect 或 setInterval 呼叫
+// 必定被擋 → popup_failed_to_open。舊的 warmToken() 正是這樣被呼叫的。
+//
+// 這不是「錯誤」，是 token 的正常生命週期（約 59 分鐘）走到底了，
+// 需要使用者點一下。因此它不寄信、也不觸發同步暫停。
+
+/** GIS error_callback 會丟出的 popup 類錯誤型別（lib/sheets.ts 以 err.type 包成 Error） */
+const POPUP_BLOCKED_TYPES = ['popup_failed_to_open', 'popup_closed']
+
+/**
+ * 這個錯誤是「popup 開不起來／被關掉」嗎？
+ * popup_closed（使用者自己關掉授權視窗）與 popup_failed_to_open（被瀏覽器擋）
+ * 成因不同但補救方式相同：請使用者再點一次。
+ * 非 Error 值一律安全轉字串，不得拋例外。
+ */
+export function isPopupBlocked(err: unknown): boolean {
+  let msg: string
+  if (err instanceof Error) msg = err.message
+  else if (typeof err === 'string') msg = err
+  else return false
+  return POPUP_BLOCKED_TYPES.some((t) => msg.includes(t))
+}
+
+/**
+ * 🔴 與 writeFailureMessage 同一條紅線：必須明講「帳目還在本機」。
+ * 也必須明講「瀏覽器不允許自動跳出」——否則客戶會以為是 App 壞了或自己被登出。
+ */
+export const NEEDS_RECONNECT_MESSAGE =
+  '與 Google 的連線已到期，帳目目前只存在本機（沒有遺失）。瀏覽器不允許 App 自動跳出授權視窗，請點下方按鈕重新連線，就會立刻補傳。'
+
+/** 重新連線按鈕文案。用「重新連線」而非「立即重試」——重試會讓人以為再等等就會自己好。 */
+export const RECONNECT_ACTION_LABEL = '重新連線'
