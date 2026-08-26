@@ -104,10 +104,32 @@ function acquireToken(prompt: '' | 'consent' | 'select_account' = ''): Promise<s
   })
 }
 
-// 啟動時靜默預取 token — 把可能的授權彈窗集中在 app 啟動，而非分散在各操作中
-export async function warmToken(): Promise<void> {
-  if (tokenInfo && Date.now() < tokenInfo.expires_at) return
-  await acquireToken()
+/**
+ * 目前是否持有未過期的 access token。
+ * 🔴 純查詢：不碰網路、不呼叫 GIS、不開 popup——背景路徑（啟動、自動同步）
+ *    只能用這支判斷該不該往下走。
+ */
+export function hasValidToken(): boolean {
+  return !!tokenInfo && Date.now() < tokenInfo.expires_at
+}
+
+/**
+ * 重新取得 access token。
+ * 🔴 **只能從使用者手勢（click handler）中、在任何 await 之前同步呼叫。**
+ *
+ * 為什麼需要這支、以及為什麼舊的 warmToken() 被拿掉（2.5.1）：
+ * GIS 的 tokenClient 沒有靜默模式，requestAccessToken 一定開 popup 視窗；
+ * prompt:'' 只是叫 Google 別在 popup 裡顯示同意／選帳號畫面（已授權就秒開秒關），
+ * popup 本身照開。而瀏覽器只允許使用者手勢觸發的 popup，
+ * 從啟動 useEffect 或 setInterval 呼叫必定被擋 → popup_failed_to_open。
+ * 舊的 warmToken() 正是這樣被呼叫的：它的 popup 路徑從來沒成功過，
+ * 只在每次 token 過期後的冷啟動丟錯，並讓那一輪 syncAll 整個不跑（靜默同步失敗）。
+ *
+ * 用 prompt:'' 而不是 signIn() 的 'select_account'：客戶只是 token 到期，
+ * 不該被逼著重選一次 Google 帳號。
+ */
+export function reconnect(): Promise<string> {
+  return acquireToken('')
 }
 
 // ── 公開 Auth API ──────────────────────────────────────────
