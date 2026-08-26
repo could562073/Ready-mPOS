@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../db'
 import {
   initGoogleAuth,
-  warmToken,
+  hasValidToken,
+  reconnect,
   isGoogleConfigured,
   signIn as googleSignIn,
   signOut as googleSignOut,
@@ -26,6 +27,9 @@ import {
   classifyWriteFailure,
   isPermissionDenied,
   writeFailureMessage,
+  isPopupBlocked,
+  NEEDS_RECONNECT_MESSAGE,
+  RECONNECT_ACTION_LABEL,
   type WriteDiagnostics,
   type WriteFailureKind,
 } from '../lib/syncDiag'
@@ -95,7 +99,7 @@ export function useSyncService() {
   // 客戶端完全無感——帳目一直停在本機 PENDING 卻以為已經上雲。null = 目前正常。
   // 2.4.0：初始值改由持久化的暫停狀態還原 —— 容量滿這種問題不會自己好，橫幅必須「常駐」
   // （重開 App 仍在），否則客戶關掉一次就再也不知道帳目其實沒上雲。
-  const [syncError, setSyncError]     = useState<{ kind: WriteFailureKind; message: string } | null>(() => {
+  const [syncError, setSyncError]     = useState<{ kind: WriteFailureKind; message: string; retryLabel?: string } | null>(() => {
     const p = getPause()
     return p ? { kind: p.kind, message: writeFailureMessage(p.kind) } : null
   })
@@ -110,12 +114,9 @@ export function useSyncService() {
   // 用此旗標讓「顯示阻擋層＋跑備份」在單次 App 開啟中最多一次；之後的同步只做輕量新格式推拉。
   const migrationTriedRef = useRef(false)
 
-  // GIS script 非同步載入，輪詢直到 google.accounts 可用
-  // 初始化後若已登入則靜默預取 token，把授權彈窗集中在啟動時，不在儲存/同步操作中途出現
-  // 每 50 分鐘自動靜默刷新，確保 token 不在使用中過期
+  // GIS script 非同步載入，輪詢直到 google.accounts 可用。
+  // 2.5.1：啟動時不再嘗試取 token（見下方 init() 內註解），也移除原本每 50 分鐘的定時器。
   useEffect(() => {
-    let refreshTimer: ReturnType<typeof setInterval>
-
     // 🔴 安全守衛（同步執行於 mount，必須在 init() 之外的 effect 頂層）：
     // 若已儲存的試算表名稱與目前 AUTO_SHEET_NAME 不符（分支切換或 cutover 改名），
     // 清掉舊試算表指標，強制下次登入依新名稱重新解析，避免沿用到別張表（含正式站）。
@@ -130,34 +131,41 @@ export function useSyncService() {
 
     const init = () => {
       initGoogleAuth()
-      if (getSignedInEmail()) {
-        // 🔴 初次同步必須等 token 就緒後才觸發（見下方 syncAll-on-mount 已移除即時呼叫）：
-        //    冷啟動時若持久化 token 已過期，tokenInfo=null 且 GIS(tokenClient) 尚未初始化，
-        //    acquireToken 會直接 reject → pull 拋錯 → 遷移被 try/catch 靜默吞掉且不重試。
-        //    改為 warmToken()（確保拿到有效 token，必要時靜默刷新）成功後才 syncAll，
-        //    讓「本來就登入」的返回使用者也能可靠偵測並執行新舊資料轉換。
-        // 2.4.0：token 取得失敗以前是 .catch(() => {}) 全吞——而它一失敗，整個同步就
-        //        從頭到尾沒跑過，客戶與開發者兩邊都無聲無息。改為回報（去重＋12h 冷卻，不會洗版）。
-        warmToken().then(() => syncAll()).catch(err => reportError('auth/warmToken', err))
-        // 每 50 分鐘靜默刷新（token 壽命 60 分鐘，提前更新避免過期觸發 popup）
-        refreshTimer = setInterval(() => {
-          if (getSignedInEmail()) warmToken().catch(err => reportError('auth/warmTokenRefresh', err))
-        }, 50 * 60 * 1000)
-      }
+      if (!getSignedInEmail()) return
+
+      // 2.5.1：啟動時**不再**嘗試取 token。
+      // 舊寫法（啟動時預取 token 再 syncAll()）在 token 過期時會呼叫 GIS
+      // requestAccessToken，但啟動 effect 沒有 user activation → popup 必被擋
+      // → 整輪 syncAll 不跑，而 .catch 只寄信給開發者、客戶完全無感。
+      // 帳目就這樣一直停在本機 PENDING，老闆卻以為早就上雲了。
+      //
+      // 也移除了原本每 50 分鐘的「靜默刷新」定時器：GIS 瀏覽器端是 implicit flow，
+      // 沒有 refresh token，不存在任何靜默刷新途徑；定時器唯一的效果是每 50 分鐘
+      // 產生一個被擋的 popup 與一封錯誤信。
+      if (hasValidToken()) syncAll()
+      else showReconnectNeeded()
     }
 
-    if ((window as any).google?.accounts) {
-      init()
-    } else {
-      const id = setInterval(() => {
-        if ((window as any).google?.accounts) {
-          clearInterval(id)
-          init()
-        }
-      }, 300)
-      return () => { clearInterval(id); clearInterval(refreshTimer) }
-    }
-    return () => clearInterval(refreshTimer)
+    if ((window as any).google?.accounts) { init(); return }
+
+    // GIS script 尚未載入完成 → 輪詢等它
+    const id = setInterval(() => {
+      if ((window as any).google?.accounts) { clearInterval(id); init() }
+    }, 300)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 需要使用者點一下才能重新連線（2.5.1）。
+  // 🔴 kind 刻意用 'UNKNOWN'：它不在 shouldPauseFor 的持久性成因清單內，
+  //    所以**不會觸發同步暫停**。這不是「壞掉」，只是 token 到期要點一下；
+  //    把整個同步暫停掉反而害帳目更晚上雲。
+  const showReconnectNeeded = useCallback(() => {
+    setSyncError({
+      kind: 'UNKNOWN',
+      message: NEEDS_RECONNECT_MESSAGE,
+      retryLabel: RECONNECT_ACTION_LABEL,
+    })
   }, [])
 
   // 同步失敗的共用處理（2.2.2）：跑診斷探針 → 分類 → 設定使用者可見狀態 → 帶著診斷回報。
@@ -166,6 +174,12 @@ export function useSyncService() {
   // 🔴 這支只跑在錯誤路徑上，本身不得拋例外而蓋掉原始錯誤。
   const handleSyncFailure = useCallback(
     async (context: string, err: unknown, extra?: Record<string, unknown>) => {
+      // 防禦縱深（2.5.1）：popup 被擋不是「同步失敗」，是「需要點一下」。
+      // 正常路徑已被 runSync 的 token 守衛擋住；這裡負責接住尚未做 gesture-first
+      // 處理的路徑（restoreFromSheets / syncCategories）。
+      // 不寄信：token 到期是正常生命週期，不是程式錯誤，寄了只會洗版。
+      // 也不能落到 UNKNOWN 的預設訊息「稍後會自動重試」——它不會自己好，那是騙人的。
+      if (isPopupBlocked(err)) { showReconnectNeeded(); return }
       let kind: WriteFailureKind = 'UNKNOWN'
       let diag: WriteDiagnostics | null = null
       try {
@@ -234,6 +248,13 @@ export function useSyncService() {
       }
       return
     }
+
+    // 🔴 token 失效就不要往下打 API（2.5.1）：底下的 acquireToken 會呼叫 GIS
+    //    requestAccessToken，而此處必定已離開 user gesture（都在 await 之後），
+    //    popup 一定被擋。與其讓整輪同步在深處炸掉再回報一個客戶看不懂的錯誤，
+    //    不如直接請他點一下。手動重試（retryNow）已在點擊當下先 reconnect()，
+    //    走到這裡時 hasValidToken() 為 true，不受影響。
+    if (!hasValidToken()) { showReconnectNeeded(); return }
 
     // 🔴 暫停閘門（2.4.0）：容量滿時，每筆記帳都完整跑一輪必定失敗的同步（含 3 個診斷探針）
     //    毫無意義。但**刻意不是全停**——每次開 App 仍放行一次心跳，同一 session 每 6h 再一次，
@@ -407,8 +428,22 @@ export function useSyncService() {
   //    若接受參數就會把 Event 物件當成選項吃進去。
   const syncAll = useCallback(() => { void runSync(false) }, [runSync])
 
-  // 手動重試（橫幅「我已清理完成，立即重試」／設定頁「同步」）——無視暫停閘門
-  const retryNow = useCallback(() => { void runSync(true) }, [runSync])
+  // 🔴 手動重試：token 到期時必須**在任何 await 之前**同步呼叫 reconnect()，
+  //    否則 transient user activation 就沒了、popup 會被瀏覽器擋下。
+  //    這是整個修正的關鍵——GIS 只有在使用者手勢中才開得起授權視窗。
+  const retryNow = useCallback(() => {
+    if (getSignedInEmail() && !hasValidToken()) {
+      reconnect()
+        .then(() => { void runSync(true) })
+        .catch(err => {
+          showReconnectNeeded()
+          // popup 被擋／使用者自己關掉授權視窗 → 不寄信（不是程式錯誤，寄了只會洗版）
+          if (!isPopupBlocked(err)) reportError('auth/reconnect', err)
+        })
+      return
+    }
+    void runSync(true)
+  }, [runSync, showReconnectNeeded])
 
   // 強制從雲端還原：清空本機後以雲端資料完整覆蓋
   const restoreFromSheets = useCallback(async () => {
@@ -509,7 +544,7 @@ export function useSyncService() {
   }, [syncAll])
 
   useEffect(() => {
-    // 初次同步改由上方 init() 的 warmToken().then(syncAll) 觸發（token 就緒後才同步，避免冷啟動靜默失敗）；
+    // 初次同步改由上方啟動 effect 的 init() 觸發（token 有效才 syncAll，否則顯示重新連線提示）；
     // 這裡只保留「恢復連線」時重新同步（此時 GIS 已初始化、token 多半有效）。
     window.addEventListener('online', syncAll)
     return () => window.removeEventListener('online', syncAll)
