@@ -97,6 +97,7 @@ function App() {
             retrying={syncing}
             onRetry={retryNow}
             onDismiss={dismissSyncError}
+            retryLabel={syncError.retryLabel}
           />
         )}
         {tab === 'daily' && (
