@@ -1,8 +1,8 @@
 # AGENTS.md - Ready-mPOS
 
 > **Documentation Version**: 2.0
-> **Last Updated**: 2026-08-24
-> **App Version**: 2.5.0（見下方「版本號規則」）
+> **Last Updated**: 2026-08-27
+> **App Version**: 2.5.1（見下方「版本號規則」）
 > **Project**: Ready-mPOS
 > **Description**: 店家記帳系統 — 給餐廳/咖啡廳老闆用的記帳 App，解決手寫記帳本的核心痛點
 > **Features**: Offline-first PWA, Google Sheets sync, dynamic categories, push notifications, GitHub Pages deployment
@@ -67,6 +67,7 @@ Before starting any task:
 - **修類別停用／刪除同步不生效（2.4.1）**: ✅ 客戶回報「類別管理的關閉與刪除都沒有生效」——操作完看似成功，過一陣子又跳回原狀。**單一缺陷、兩個症狀**：`pushConfigToSheets` 以 `valueInputOption=USER_ENTERED` 寫 `_config`，該選項的語意等同「使用者手打」，Sheets 於是把字串 `'true'`/`'false'` 解析成**布林儲存格**；`pullConfigFromSheets` 用預設的 `FORMATTED_VALUE` 讀回來拿到的是顯示字串**大寫** `'TRUE'`/`'FALSE'`，而解析器比對的是小寫字面值 → `enabled: r[...] !== 'false'` 對 `'FALSE'` 永遠成立（停用被翻回啟用）、`deleted: r[...] === 'true'` 對 `'TRUE'` 永遠不成立（2.3.0 的墓碑被抹掉、類別復活），接著 `applyCloudCategories` 覆蓋 localStorage，使用者的操作就這樣被還原。🔴 **為什麼只有這兩個操作壞**：十欄裡只有 `enabled`／`deleted` 是布林，改名／圖示／顏色／二級都是純文字，往返無損；二級的刪除旗標藏在序列化字串 `id:name:1` 裡（也是純文字）所以同樣倖存——症狀的形狀本身就指向布林欄。**為什麼現在才爆**：客戶帳號容量滿（見 2.2.2）期間 push 一路 403 → dirty 旗標清不掉 → `pullConfigFromSheets` 開頭 `isCategoriesDirty()` 就 return null → **從來沒拉取過，也就沒機會覆蓋**；容量清出來後 push 成功、dirty 清掉、pull 開始跑，潛伏的解析 bug 才浮上檯面（2.3.0 於 2026-08-09 上線，2026-08-18 回報）。**為什麼 149 個測試沒接住**：這段解析 inline 在網路函式 `pullConfigFromSheets` 中間、不是純函式，`_config` 往返路徑零覆蓋——專案的測試紀律是「純函式才有測試」，於是夾在 I/O 裡的邏輯就成了盲區。**修法（讀寫兩側都修）**：🔴 只修一側不夠——**寫側改好才不會繼續污染，讀側改好才救得回已經壞掉的雲端表**（客戶表裡現存的已經是布林儲存格）。`lib/categories.ts` 抽出純函式 `CONFIG_HEADERS`（從 `sheets.ts` 移來，與轉換函式放一起）／`categoriesToConfigRows`／`configRowsToCategories`／`parseSheetBool`；`parseSheetBool` 同時認得 `'TRUE'`/`'true'`/真布林（`UNFORMATTED_VALUE` 會給真的 boolean），無法辨識時回 fallback——`enabled` 預設 `true`、`deleted` 預設 `false`，**寧可多顯示一個類別，也不要因欄位遺失讓整批帳目的類別無聲消失**（沿用 2.3.0 的紅線思路）。寫入改 `valueInputOption=RAW`（`backupSpreadsheet` 早有先例），順帶保護類別名稱不被當成日期或公式解析。`push`/`pull` 改呼叫純函式，其餘行為不變、**未新增任何 API 呼叫**。Vitest 161 綠（+12：大寫 TRUE/FALSE、真布林、小寫、舊表缺 `deleted` 欄、`enabled` 欄缺漏、欄序變動、空列略過、完整往返）。⚠️ **資料可復原性**：客戶最後一次停用／刪除若有推上雲，雲端 `_config` 仍是布林 TRUE，修好的讀取端下次 pull 就會還原；但若之後又編輯過任何類別（dirty → push 把翻回來的 `false` 寫回雲端），那筆設定就真的沒了，需請客戶重做一次。**帳目資料不受影響**（月份分頁完全沒動）。⚠️ 月份分頁的寫入仍是 `USER_ENTERED`（金額要存成數字、`rowToTx` 以 ID 欄關聯且 id 為 UUID 不會被轉型）——本次刻意不動，留為後續觀察項。
 - **資安檢測 + 測試安全網 第一輪（2.4.2）**: ✅ 全專案資安檢測後的第一批落地。刻意**只挑零行為變更的項目先走**，讓後續高風險改動（token 儲存位置、`RAW`/`UNFORMATTED_VALUE` 切換、CSP）落地時已經有測試網可接。**L1 解析純函式**：`lib/txSheets.ts` 新增 `parseSheetAmount` / `parseSheetDate`（+20 Vitest，181 綠）。動機＝**2.4.1 事故的未爆版本**——`sheets.ts` 所有讀取都沒指定 `valueRenderOption`，一律吃預設的 `FORMATTED_VALUE`，拿到的是「畫面上顯示的字串」而非儲存格真值。今天沒出事只是因為寫進去的是無格式整數；但只要使用者在試算表上對「金額」欄套用一次貨幣或千分位格式，讀回來就變成 `"1,234"`，而現行 `rowToTx` 的 `Number(...) || 0` 會把它**吞成 0**，接著被整月 clear+覆蓋寫回雲端——**本機與雲端同時歸零，且全程沒有任何錯誤訊息**。🔴 兩個函式的共同紅線：**解析失敗一律回 `null`，絕不回 0、也絕不猜一個日期**——0 本身是合法金額，拿它當「解析失敗」的哨兵值等於授權一次壞掉的讀取覆寫使用者的真實帳目；同理 `parseSheetDate` **刻意拒收** `8/23/2026`（美式）與 `23/8/2026`（歐式），字串本身分不出月與日，猜錯會讓整筆交易落到錯誤月份而在月結中消失，寧可回 `null` 讓呼叫端略過該列、本機值勝出。⚠️ **此版刻意不接線**：`rowToTx` 仍為舊寫法、行為完全不變——接線與「寫入改 `RAW` + 讀取改 `UNFORMATTED_VALUE`」屬同一次語意變更，排在後續輪次一起做、一起驗收；先獨立落地並用測試把行為鎖死，是為了不重演 2.4.1「解析邏輯夾在網路函式裡＝零測試覆蓋」。**CI**（`.github/workflows/deploy.yml`）：`npm install` → **`npm ci`**（以 lock 檔為準，避免部署當下悄悄升版而正式站與本機驗收跑的不是同一份相依；已用 `npm ci --dry-run` 確認 lock 與 `package.json` 同步）、Node 20 → 22、`checkout`/`setup-node` v4 → v5。⚠️ 首次部署後發現 node20 淘汰警告**仍在**——發警告的其實是 pages 三件套（`configure-pages`／`deploy-pages`／`upload-pages-artifact` 內部的 `upload-artifact`），不是 checkout/setup-node；隨後補升 `configure-pages@v6`／`upload-pages-artifact@v5`／`deploy-pages@v5`（三者皆已改 `using: node24`，`path` 輸入與 `page_url` 輸出未變）才真正清掉。**隱私政策**（`frontend/public/privacy.html`）改寫為繁體中文並與實作對齊：移除**根本沒發生**的宣稱（IP／瀏覽行為／OS 蒐集、行銷聯絡、第三方分享、Opt-Out 說明），補上**真的有但沒寫**的事實（無後端架構＝帳目只在使用者裝置與其自己的 Google 帳號之間、IndexedDB 與 localStorage 各存什麼、三個 OAuth scope 各自用途、錯誤回報「送什麼／絕不送什麼」＋`redact()` 去識別化＋12h 冷卻＋僅正式站啟用，以及「目前沒有 App 內開關可停用錯誤回報」的誠實說明）。⚠️ `terms.html` 有同類問題（最嚴重：仍寫「服務商儲存並處理您提供的個人資料」，與新隱私政策直接矛盾），本輪**未動**，留待後續。
 - **Sheets 讀寫型別收斂 + 讀不懂就不改寫（2.5.0）**: ✅ 資安檢測第二輪，把 2.4.2 埋好的安全網真正接上線。**這是 2.4.1 事故的「同一個病、不同器官」**——2.4.1 是 `_config` 的布林欄被 Sheets 轉型，這輪處理的是**月份分頁的金額與日期欄**：所有讀取原本都吃預設的 `FORMATTED_VALUE`（拿到畫面顯示字串而非儲存格真值），只要使用者在試算表上對金額欄套一次千分位格式，讀回來就是 `"1,234"`，而舊 `rowToTx` 的 `Number(...) || 0` 會**吞成 0**，接著被整月 clear+覆蓋寫回雲端 → 本機與雲端同時歸零、全程無錯誤訊息。**Step 1（L2 測試安全網）**：`lib/sheets.test.ts` 以 `vi.stubGlobal` stub `fetch` + `vi.resetModules()` + 動態 `import()` 覆蓋網路層（`sheets.ts` 在 module load 時就從 localStorage 還原 token，所以不需要真的 GIS 就能測）——先把 `_config` 往返與月份分頁讀寫的**現行行為**鎖死，才敢動語意。**Step 2（C1 接線）**：`rowToTx` 回傳型別從 `TxSeed | null` 改為**辨識聯集** `RowParse = { kind:'tx'; seed } | { kind:'skip' } | { kind:'unreadable' }`。🔴 **這個型別本身就是修正**：舊寫法用 `null` 同時表達「這列是空的」與「這列我讀不懂」，兩者被一視同仁地略過——於是**使用者自己在試算表手加的一列（有內容、沒 id）會先被 pull 忽略，再被該月的 clear+覆蓋整列刪掉**，這是本輪順手關掉的既有靜默資料流失路徑。`parseOldMonthRows` 亦改走 `parseSheetDate`／`parseSheetAmount`。`planMonthsToRewrite` 新增 `unreadableMonths` 輸入，並在**最後一步**做 `out.delete(m)`——🔴 順序是刻意的：`upgradeMonths`（補 ID 欄）本來就不受備份門檻限制，但「讀不懂」的優先權必須高於它，否則帶著讀不懂的列去改寫就是拿壞資料覆蓋好資料。使用者可見：`useSyncService` 沿用既有 `syncError`／`SyncErrorBanner`（零管線新增）告知「某月有讀不懂的列、為了不覆蓋掉那些資料暫時不自動更新、你的帳目在本機都完好」，`kind` **刻意用 `UNKNOWN`**——它不在 `shouldPauseFor` 的持久性成因清單內，所以**其他月份照常同步**，不會因為一個月的格式異常就停掉整個同步。**Step 3（C2 型別收斂）**：月份分頁寫入 `USER_ENTERED` → **`RAW`**（避免類別名稱／備註被當成日期或公式解析；金額本來就是數字，RAW 寫進去仍是數字）；`_config` 讀取加 `?valueRenderOption=UNFORMATTED_VALUE`（從源頭拿真布林，與 2.4.1 的 `parseSheetBool` 兩道防線並存）。🔴 **備份匯出刻意維持 `FORMATTED_VALUE`**：備份是給人看的災難復原檔，日期若變成序號 `46257` 就沒人讀得懂，且沒有任何程式會把備份表讀回來（已確認唯一呼叫點 `useSyncService.ts`）。死碼 `pullAllFromSheets`／`syncMonthToSheets` 標註 `⚠️ 死碼` 但**不動其 `USER_ENTERED`**——改沒人跑的程式是純風險。**接線時抓到的回歸**（差點釀成新事故）：舊格式月份分頁是 2.0 之前用 `USER_ENTERED` 寫的，**日期欄是真的日期儲存格**，改讀 `UNFORMATTED_VALUE` 後拿到的是序號 → `explodeDailyRecord` 的決定性 id 會變成 `mpos:46257:...` 而與本機 id 對不起來；客戶端 `oldMonthCount:1` 至今未變，**這條路徑是活的**，故 `parseOldMonthRows` 必須一併改走 `parseSheetDate`。最後對核心防線跑**突變測試**驗證不是空轉（拿掉 `out.delete(m)`、把 `unreadable` 降級成 `skip` → 恰好 4 個測試轉紅）。Vitest 203 綠（+22）。
+- **修 warmToken 啟動 popup 被擋 + 靜默同步失敗（2.5.1）**: ✅ 正式站持續寄回 `auth/warmToken` → `popup_failed_to_open`。根因：**GIS 的 tokenClient 沒有靜默模式**——`requestAccessToken` 一定開 popup 視窗，`prompt:''` 只是叫 Google 別在 popup 內顯示同意／選帳號畫面，popup 本身照開；而瀏覽器只允許使用者手勢觸發的 popup，`warmToken()` 卻是從啟動 `useEffect`（`useSyncService.ts:141`）與每 50 分鐘的 `setInterval` 呼叫的 → 必定被擋。`sheets.ts` 那句「啟動時靜默預取 token」的註解**建立在錯誤前提上、從未成立**，只在「快取 token 仍有效、提早 return」時看起來正常（那時它根本沒做事）。token 壽命 `expires_in - 60` ≈ 59 分鐘 → **距上次取得超過約 59 分鐘的每一次冷啟動**都中，也就是「早上打開 App」。🔴 **真正的傷不是那封信，是又一次靜默同步失敗**：`warmToken().then(() => syncAll())` 一 reject，`syncAll()` **整輪不跑**，而 `.catch` 只有 `reportError`、**沒有 `setSyncError`** → 客戶完全無感；且**不會自己好**（之後每個 `syncAll` 觸發點走到 `acquireToken` 都在 `await` 之後，手勢早沒了），要到使用者主動點「登入」才恢復——同 2.2.2／2.4.0 那條「帳目停在本機 PENDING、老闆以為早就上雲」的老病。**為什麼現在才收到信**：`3a5efc0`（v2.4.0）把該處的 `.catch(() => {})` 改成 `reportError`，在那之前這個失敗被完全吞掉。**修法**：`sheets.ts` 刪除 `warmToken()`（唯一呼叫端是 `useSyncService`），改為 `hasValidToken()`（純查詢，不碰網路不開 popup）與 `reconnect()`（=`acquireToken('')`，🔴 **只能從 click handler、在任何 `await` 之前同步呼叫**；用 `prompt:''` 而非 `signIn()` 的 `select_account`，免得逼客戶重選帳號）；**移除 50 分鐘刷新定時器**——GIS 瀏覽器端是 implicit flow、**沒有 refresh token**，不存在靜默刷新途徑，該定時器唯一效果是每 50 分鐘產生一個被擋的 popup。啟動改 `hasValidToken() ? syncAll() : showReconnectNeeded()`；`runSync` 加 token 守衛（不往下打 API）；`retryNow` 改 **gesture-first**（先 `reconnect()` 再 `runSync(true)`）。使用者可見：沿用既有 `syncError`／`SyncErrorBanner` 管線（零新管線），`kind` **刻意用 `UNKNOWN`**——不在 `shouldPauseFor` 清單內故**不觸發同步暫停**（只是要點一下，停掉同步反而害帳目更晚上雲）；`SyncErrorBanner` 新增選用 `retryLabel` prop，文案從誤導的「立即重試」改為「重新連線」。防禦縱深：`syncDiag.ts` 新增純函式 `isPopupBlocked`（認 `popup_failed_to_open`／`popup_closed`），`handleSyncFailure` 開頭攔截 → 顯示重新連線提示並 return、**不寄信**（token 到期是正常生命週期，不是程式錯誤），覆蓋 `restoreFromSheets`／`syncCategories` 等未做 gesture-first 的路徑。訊息 `NEEDS_RECONNECT_MESSAGE` 放進 `syncDiag.ts` 而非 hook 內——2.4.1 的教訓是「邏輯夾在非純函式模組＝零測試覆蓋」，放這裡既有的「訊息必須含『本機』」紅線才鎖得住。⚠️ **非目標**：`restoreFromSheets`／`syncCategories` 等按鈕**未**逐一改成 gesture-first（由防禦縱深覆蓋成正確提示），留為後續。spec：`docs/superpowers/specs/2026-08-26-warm-token-popup-fix-design.md`。
 - **分潤機制拔除（2.2.0 同分支）**: ✅ 外送平台手續費扣抵在真實記帳流程中不成立（撥款已是分潤後淨額）——帳目頁小計卡、月結 Hero／上月比較／逐日列均移除手續費扣除，類別管理移除手續費設定 UI，預設 Uber Eats/foodpanda fee 歸零。`Category.fee` 型別欄位與 Sheets `_config` 的 fee 欄位保留不動（供既有雲端資料相容），`calcFees()` 函式保留但目前**沒有任何呼叫方**（`DailyEntryPage.tsx` 的手續費計算是自己 inline filter/reduce，並未呼叫 `calcFees()`）——僅為未來可能用途保留，非因仍有頁面使用。
 
 ---
@@ -83,6 +84,7 @@ Before starting any task:
 - **預發布**：尚未上正式資料的大改在合併前掛 `-beta.N` 尾碼（本次逐筆交易改造 cutover 前即為 `2.0.0-beta.1/2`）。
 
 **目前 = `2.5.0`**（Sheets 讀寫型別收斂：解析純函式接線 + 月份寫入 `RAW` + `_config` 讀 `UNFORMATTED_VALUE` + 「讀不懂就不改寫該月」防線 → MINOR：有行為變更）。
+`2.5.1` = 修 warmToken 啟動 popup 被擋 + 靜默同步失敗（PATCH）。
 `2.4.2` = 資安檢測第一輪：解析純函式 + CI `npm ci` + 隱私政策（PATCH：無行為變更）。
 `2.4.1` = 修 `_config` 布林欄往返，類別停用／刪除同步不生效（PATCH）。
 `2.4.0` = 同步暫停閘門 + 低頻心跳自動恢復 + 客戶可見同步狀態／手動重試（MINOR）。
@@ -138,11 +140,11 @@ Ready-mPOS/
 │       │   ├── TransactionSheet.tsx   # 交易記帳底部 Sheet（收支/類別/二級/金額/儲存並繼續，Phase 4）
 │       │   ├── MonthCalendar.tsx       # 帳目頁月曆元件（每日淨額格/切月/點日，Phase 6）
 │       │   ├── MissingDaysCard.tsx    # 月結未記帳日提示卡（固定週公休+臨時標記，2.1.0）
-│       │   ├── SyncErrorBanner.tsx    # 同步失敗提示橫幅（跨所有 tab，琥珀色，2.2.2；2.4.0 加手動重試＋回報告知）
+│       │   ├── SyncErrorBanner.tsx    # 同步失敗提示橫幅（跨所有 tab，琥珀色，2.2.2；2.4.0 加手動重試＋回報告知；2.5.1 加 `retryLabel`）
 │       │   ├── CostStructureCard.tsx  # 月結成本結構卡（二級細目/佔收入比/vs 上月，2.1.0）
 │       │   └── CategoryEditSheet.tsx  # 類別新增/編輯底部 Sheet（共用）
 │       ├── lib/
-│       │   ├── sheets.ts              # Google Sheets API + GIS OAuth2
+│       │   ├── sheets.ts              # Google Sheets API + GIS OAuth2 + `hasValidToken`／`reconnect`（2.5.1，🔴 `reconnect` 只能從使用者手勢呼叫）
 │       │   ├── categories.ts          # 類別 localStorage CRUD + 軟刪除墓碑/孤兒回收（2.3.0）+ _config 列⇄物件純函式（2.4.1）+ calcFees
 │       │   ├── notification.ts        # SW 通知工具（權限、sendReminderToSW）
 │       │   ├── tokens.ts              # Design tokens（色彩、字體、圓角）
@@ -154,7 +156,7 @@ Ready-mPOS/
 │       │   ├── calendar.ts            # 月曆：月份日期矩陣 / 每日淨額 / 切月（純函式，Phase 6）
 │       │   ├── aggregate.ts           # buildDailyRecordsFromTx：交易→合成 DailyRecord（純函式，Phase 7）
 │       │   ├── closedDays.ts          # 公休日儲存層：固定週公休 + 臨時逐日標記（localStorage，2.1.0）
-│       │   ├── syncDiag.ts            # 寫入失敗分類純函式：classifyWriteFailure/writeFailureMessage/isPermissionDenied（2.2.2）
+│       │   ├── syncDiag.ts            # 寫入失敗分類純函式：classifyWriteFailure/writeFailureMessage/isPermissionDenied（2.2.2）+ `isPopupBlocked`／`NEEDS_RECONNECT_MESSAGE`（2.5.1）
 │       │   ├── syncPause.ts           # 同步暫停狀態 + 低頻心跳判斷（持久性成因才暫停，成功自動解除，2.4.0）
 │       │   ├── monthReport.ts         # 月結分析純函式：漏記日/上月比較區間/類別二級彙總（2.1.0）
 │       │   ├── subMemory.ts           # 記「每個一級上次用的二級」（localStorage）
@@ -238,7 +240,7 @@ Ready-mPOS/
 
 ### Google Auth（`lib/sheets.ts`）
 - Token 儲存在 `localStorage`（跨 session 持久化）
-- `warmToken()` — 啟動時靜默預取，每 50 分鐘自動刷新
+- 🔴 **沒有靜默取 token 這回事（2.5.1）**：GIS `requestAccessToken` 一定開 popup，`prompt:''` 只影響 popup 內容。背景路徑（啟動 effect、定時器、任何 `await` 之後）只能用 `hasValidToken()` 純查詢；要取新 token 一律經 `reconnect()`，且**必須在 click handler 內、任何 `await` 之前**呼叫，否則 popup 會被瀏覽器擋下（`popup_failed_to_open`）。瀏覽器 implicit flow **沒有 refresh token**，不要再嘗試寫任何「自動刷新」。
 - `acquireToken(prompt='')` — 靜默取得 token，有 token 且未過期直接回傳
 
 ### Service Worker（`public/sw.js`）
