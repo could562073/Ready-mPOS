@@ -83,8 +83,8 @@ Before starting any task:
 - **PATCH**：修正與小調整（bug fix、文案、樣式）。
 - **預發布**：尚未上正式資料的大改在合併前掛 `-beta.N` 尾碼（本次逐筆交易改造 cutover 前即為 `2.0.0-beta.1/2`）。
 
-**目前 = `2.5.0`**（Sheets 讀寫型別收斂：解析純函式接線 + 月份寫入 `RAW` + `_config` 讀 `UNFORMATTED_VALUE` + 「讀不懂就不改寫該月」防線 → MINOR：有行為變更）。
-`2.5.1` = 修 warmToken 啟動 popup 被擋 + 靜默同步失敗（PATCH）。
+**目前 = `2.5.1`**（修 warmToken 啟動 popup 被擋 + 靜默同步失敗 → PATCH）。
+`2.5.0` = Sheets 讀寫型別收斂：解析純函式接線 + 月份寫入 `RAW` + `_config` 讀 `UNFORMATTED_VALUE` + 「讀不懂就不改寫該月」防線（MINOR：有行為變更）。
 `2.4.2` = 資安檢測第一輪：解析純函式 + CI `npm ci` + 隱私政策（PATCH：無行為變更）。
 `2.4.1` = 修 `_config` 布林欄往返，類別停用／刪除同步不生效（PATCH）。
 `2.4.0` = 同步暫停閘門 + 低頻心跳自動恢復 + 客戶可見同步狀態／手動重試（MINOR）。
@@ -241,7 +241,7 @@ Ready-mPOS/
 ### Google Auth（`lib/sheets.ts`）
 - Token 儲存在 `localStorage`（跨 session 持久化）
 - 🔴 **沒有靜默取 token 這回事（2.5.1）**：GIS `requestAccessToken` 一定開 popup，`prompt:''` 只影響 popup 內容。背景路徑（啟動 effect、定時器、任何 `await` 之後）只能用 `hasValidToken()` 純查詢；要取新 token 一律經 `reconnect()`，且**必須在 click handler 內、任何 `await` 之前**呼叫，否則 popup 會被瀏覽器擋下（`popup_failed_to_open`）。瀏覽器 implicit flow **沒有 refresh token**，不要再嘗試寫任何「自動刷新」。
-- `acquireToken(prompt='')` — 靜默取得 token，有 token 且未過期直接回傳
+- `acquireToken(prompt='')` — 內部共用函式：快取 token 未過期時直接回傳（不開 popup、不觸網）；快取失效時仍會呼叫 `requestAccessToken` 開 popup，因此**不是**「隨時可靜默呼叫」——背景路徑只能呼叫上面的 `hasValidToken()`，取新 token 一律走 `reconnect()` 並遵守其手勢限制。
 
 ### Service Worker（`public/sw.js`）
 - 設定儲存在 SW 內的 IndexedDB（`mpos-reminder` DB）
