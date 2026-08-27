@@ -94,8 +94,13 @@ export function SyncErrorBanner({ kind, message, paused, retrying, retryLabel, o
         </button>
 
         {/* 2.4.0：回報是自動的（工作項目 C 的「要不要送出」詢問視窗已暫緩），
-            但客戶有權知道有東西被送出去、以及送的不是他的帳目內容。 */}
-        {isErrorReportEnabled() && (
+            但客戶有權知道有東西被送出去、以及送的不是他的帳目內容。
+            2.5.1：needsAction 時不顯示——token 到期／popup 被擋是**刻意不回報**的
+            （handleSyncFailure 開頭 isPopupBlocked 就 return，其餘 showReconnectNeeded
+            呼叫點根本沒接 reportError），這裡照講就是騙客戶「開發者已經知道了」，
+            客戶於是不通報、開發者也永遠不知道。同 2.4.0 加 isErrorReportEnabled()
+            gating 的理由：沒送出去就不能說已回報。 */}
+        {isErrorReportEnabled() && !needsAction && (
           <div style={{ fontSize: 11, lineHeight: 1.5, fontWeight: 600, opacity: 0.75, marginTop: 6 }}>
             此問題已自動回報給開發者（僅傳送錯誤訊息，不含帳目內容與金額）
           </div>
