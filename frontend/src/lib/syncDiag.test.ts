@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyWriteFailure, isPermissionDenied, writeFailureMessage, type WriteDiagnostics } from './syncDiag'
+import { classifyWriteFailure, isPermissionDenied, writeFailureMessage, isPopupBlocked, NEEDS_RECONNECT_MESSAGE, type WriteDiagnostics } from './syncDiag'
 
 // 全部查不到的空白診斷（探針自身失敗時的樣子）
 const blank: WriteDiagnostics = {
@@ -114,5 +114,31 @@ describe('isPermissionDenied', () => {
     expect(isPermissionDenied(null)).toBe(false)
     expect(isPermissionDenied(undefined)).toBe(false)
     expect(isPermissionDenied({ weird: true })).toBe(false)
+  })
+})
+
+describe('isPopupBlocked', () => {
+  it('認得 GIS 的 popup 被擋錯誤', () => {
+    expect(isPopupBlocked(new Error('popup_failed_to_open'))).toBe(true)
+    expect(isPopupBlocked(new Error('popup_closed'))).toBe(true)
+    expect(isPopupBlocked('popup_failed_to_open')).toBe(true)
+  })
+
+  it('其他同步失敗不會被誤判成 popup 問題', () => {
+    expect(isPopupBlocked(new Error('Sheets GET /<id> → 403: PERMISSION_DENIED'))).toBe(false)
+    expect(isPopupBlocked(new Error('Failed to fetch'))).toBe(false)
+    // 只認完整的錯誤型別字串，不因為出現 "popup" 三個字就成立
+    expect(isPopupBlocked(new Error('opening popup for consent'))).toBe(false)
+  })
+
+  it('非 Error 物件不會爆', () => {
+    expect(isPopupBlocked(null)).toBe(false)
+    expect(isPopupBlocked(undefined)).toBe(false)
+    expect(isPopupBlocked({ type: 'popup_failed_to_open' })).toBe(false)
+  })
+
+  it('重新連線訊息同樣必須明講「本機」', () => {
+    // 🔴 與 writeFailureMessage 同一條紅線：客戶最怕的是帳目不見了
+    expect(NEEDS_RECONNECT_MESSAGE).toContain('本機')
   })
 })

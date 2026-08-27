@@ -29,11 +29,16 @@ function makeLocalStorage() {
 
 // 🔴 一律動態 import：sheets.ts 在 module load 當下就從 localStorage 還原 token，
 //    localStorage 必須先 stub 好、且每個測試都要 resetModules，否則 token 狀態會跨測試殘留。
-async function loadSheets(route: Route) {
+// opts.tokenExpiresInMs：預設 1 小時後過期；傳負值可模擬「token 已失效」（2.5.1）
+async function loadSheets(route: Route, opts?: { tokenExpiresInMs?: number }) {
   calls = []
+  // 🔴 CLIENT_ID 在 sheets.ts 是 module 載入時從 import.meta.env 讀的，而 .env 有進 .gitignore：
+  //    不 stub 的話，換一台機器 clone 下來 CLIENT_ID 就是空字串，initGoogleAuth() 會直接 return，
+  //    測試會以「tokenClient 沒建起來」的假原因失敗。測試不該依賴本機才有的檔案。
+  vi.stubEnv('VITE_GOOGLE_CLIENT_ID', 'test-client-id')
   const ls = makeLocalStorage()
   ls.setItem('gsheets_tk', 'fake-token')
-  ls.setItem('gsheets_tk_exp', String(Date.now() + 3600_000))
+  ls.setItem('gsheets_tk_exp', String(Date.now() + (opts?.tokenExpiresInMs ?? 3600_000)))
   vi.stubGlobal('localStorage', ls)
   vi.stubGlobal('fetch', async (url: unknown, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
@@ -49,7 +54,7 @@ async function loadSheets(route: Route) {
   return { sheets: await import('./sheets'), ls }
 }
 
-afterEach(() => { vi.unstubAllGlobals() })
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 const CONFIG_HEADER = ['id', 'name', 'icon', 'color', 'fee', 'enabled', 'type', 'subs', 'defaultSub', 'deleted']
 
@@ -327,5 +332,78 @@ describe('parseOldMonthRows — 舊彙總格式', () => {
 
     expect(r.unreadable).toBe(false)
     expect(r.records).toHaveLength(1)
+  })
+})
+
+// ── Auth token 狀態（2.5.1）────────────────────────────────────────────────
+// 這組測試鎖的是本次事故的核心規則：**背景路徑絕不可以開 popup**。
+describe('hasValidToken / reconnect', () => {
+  const noRoute: Route = () => undefined
+
+  it('localStorage 有未過期 token → true', async () => {
+    const { sheets } = await loadSheets(noRoute)
+    expect(sheets.hasValidToken()).toBe(true)
+  })
+
+  it('token 已過期 → false', async () => {
+    const { sheets } = await loadSheets(noRoute, { tokenExpiresInMs: -1000 })
+    expect(sheets.hasValidToken()).toBe(false)
+  })
+
+  it('🔴 hasValidToken 不打網路、不呼叫 requestAccessToken（不得開 popup）', async () => {
+    const { sheets } = await loadSheets(noRoute, { tokenExpiresInMs: -1000 })
+
+    // 假的 GIS：只記錄有沒有人要求開授權視窗
+    const requested: unknown[] = []
+    // 🔴 偏離 brief：本專案 vitest.config.ts 的測試環境是 'node'（純函式測試不需要 DOM），
+    //    全域沒有 window。sheets.ts 的 initGoogleAuth／signOut 讀的是 (window as any).google，
+    //    這是第一支真的呼叫到 initGoogleAuth 的測試，之前沒人踩過這個環境缺口。
+    //    stub window = globalThis：google 之後 stub 在 globalThis 上，讀起來就是同一個物件。
+    vi.stubGlobal('window', globalThis)
+    vi.stubGlobal('google', {
+      accounts: {
+        oauth2: {
+          initTokenClient: () => ({
+            requestAccessToken: (cfg: unknown) => { requested.push(cfg) },
+          }),
+        },
+      },
+    })
+    sheets.initGoogleAuth()
+
+    expect(sheets.hasValidToken()).toBe(false)
+    // 這兩行就是整個修正的規格：查詢 token 狀態不得有任何副作用
+    expect(requested).toHaveLength(0)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('reconnect 會要求 GIS 開授權視窗，且用 prompt:\'\'（不逼客戶重選帳號）', async () => {
+    const { sheets } = await loadSheets(noRoute, { tokenExpiresInMs: -1000 })
+    const requested: any[] = []
+    // 🔴 偏離 brief：同上一個測試，node 環境沒有全域 window，先 stub 成 globalThis。
+    vi.stubGlobal('window', globalThis)
+    vi.stubGlobal('google', {
+      accounts: {
+        oauth2: {
+          initTokenClient: () => ({
+            requestAccessToken: (cfg: unknown) => { requested.push(cfg) },
+          }),
+        },
+      },
+    })
+    sheets.initGoogleAuth()
+
+    void sheets.reconnect()   // 不 await：stub 不會回呼，Promise 永遠 pending
+    expect(requested).toEqual([{ prompt: '' }])
+  })
+
+  it('GIS 尚未初始化時 reconnect 明確 reject（不靜默失敗）', async () => {
+    const { sheets } = await loadSheets(noRoute, { tokenExpiresInMs: -1000 })
+    await expect(sheets.reconnect()).rejects.toThrow('GIS not initialised')
+  })
+
+  it('🔴 warmToken 已移除（背景預取 token 的路徑不得復活）', async () => {
+    const { sheets } = await loadSheets(noRoute)
+    expect((sheets as Record<string, unknown>).warmToken).toBeUndefined()
   })
 })
