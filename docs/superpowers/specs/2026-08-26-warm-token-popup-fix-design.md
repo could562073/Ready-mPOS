@@ -131,3 +131,51 @@ GIS 瀏覽器端是 implicit flow、**沒有 refresh token**，不存在任何�
 錯誤信 UA 為 **Windows 桌面 Chrome**，客戶主要使用 Android。
 需向使用者確認來源裝置——若為客戶端，代表其冷啟動同步確實整段未執行；
 若為開發／驗收機器，則客戶端影響待觀察。**此答案不影響修法**，兩者的修正相同。
+
+---
+
+## 5. 驗收時確認的事實（2026-08-27）
+
+以下三點原為未知，由 2.5.1 的手動驗收實測答出，記在這裡免得下一輪重新猜。
+
+### 5.1 `window.confirm()` **不會**吃掉 transient user activation
+
+設定頁「從雲端還原」在呼叫 `onRestore()` 前有一個 `window.confirm()`
+（`SettingsPage.tsx:204`）。實測：token 過期後點該鈕，Google 授權視窗**照常開啟**。
+
+→ 所以 §3 非目標裡「不把 `restoreFromSheets` 逐一改成 gesture-first」是安全的：
+那條路徑本來就還握著手勢。審查報告中建議抽 `withReconnect` helper 的 R-3
+同樣不必做——沒有要修的東西。
+
+### 5.2 GIS 的 COOP 警告是 Google 自己的，與本專案無關
+
+點重新連線時 console 會出現
+`client:138 Cross-Origin-Opener-Policy policy would block the window.closed call`。
+已查證：本專案**沒有在任何地方設定 COOP 標頭**，且 `sheets.ts` 對
+`initTokenClient` / `requestAccessToken` 的呼叫與 main 逐字相同——警告來自
+`gsi/client` 自己輪詢 `popup.closed` 以偵測「使用者把授權視窗關掉」，main 上也有。
+
+它真正的後果是：使用者手動關掉授權視窗時，GIS 可能偵測不到、
+`popup_closed` 不觸發 → `reconnect()` 的 promise 永遠不 settle。
+
+### 5.3 promise 不 settle **不會**卡住 UI（而修 M-3 反而會弄壞這件事）
+
+🔴 `retryNow` 刻意**沒有**在 `reconnect()` 之前 `setSyncing(true)`——`setSyncing(true)`
+在 `runSync` 裡面，而 `runSync` 只在 `.then()` 內才跑得到。所以 5.2 那種 promise
+懸著的情況下 `syncing` 仍是 `false`：橫幅還在、按鈕維持可按的「重新連線」，
+使用者再按一次就重開授權視窗。降級是溫和的。
+
+⚠️ 這推翻了審查報告 M-3 的直覺修法。若日後真要加 `reconnecting` 狀態把按鈕
+停用，**必須同時加逾時**，否則就是親手把上面這條溫和降級變成「按鈕永遠卡在
+重試中…、使用者無路可走」。
+
+---
+
+## 6. 後續追蹤（非本輪）
+
+- **橫幅在長頁面捲動後看不到**：`SyncErrorBanner` 位於捲動內容頂端
+  （`App.tsx:92`，在所有 tab 條件式之外，確實跨頁顯示），但設定頁長 649 行、
+  「從雲端還原」在 `:543`，使用者按下去時橫幅早已捲出畫面外，要切回較短的
+  帳目頁才看得到。`git diff main..HEAD -- App.tsx` 證實版面配置與 main 逐字相同
+  → **自 2.2.2 起就存在，非本輪造成**。修法會是 `position: sticky; top: 0`。
+  客戶真實路徑是「開 App → 落在帳目頁（短）→ 橫幅立刻可見」，故不阻擋本輪。
